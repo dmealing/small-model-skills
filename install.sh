@@ -32,7 +32,7 @@ echo "linked $n wrappers into $BINDIR"
 # 3. install skills
 mkdir -p "$SKILLS"
 if compgen -G "$SRC/skills/*/" >/dev/null; then
-  for d in "$SRC"/skills/*/; do cp -a "$d" "$SKILLS/"; done
+  for d in "$SRC"/skills/*/; do cp -a "$d" "$SKILLS/$(basename "$d")"; done
   echo "installed skills: $(ls "$SRC/skills" | tr '\n' ' ')"
 else
   echo "(no skills/ to install yet)"
