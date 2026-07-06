@@ -68,7 +68,7 @@ def ask(q, answer, read_hold):
     history.append([("", TXT)])                        # spacer before the next prompt
 
 # one session
-history.append(PROMPT + [("freeclaude", TXT), ("   # Claude Code -> a local model, offline", MUT)])
+history.append(PROMPT + [("claude-local", TXT), ("   # Claude Code -> a local model, offline", MUT)])
 history.append([("", TXT)]); render(6)
 
 Q1 = "is my internet flaky? check the firewall's WAN links."

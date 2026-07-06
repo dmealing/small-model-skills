@@ -6,7 +6,7 @@ set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 DIR="${1:-$PWD}"; cd "$DIR" 2>/dev/null || { echo "ERROR: no such dir: $DIR"; exit 1; }
 
-sms_head "offline-prep"
+sms_identity "Read-only: what deps/images/model are cached vs missing before you lose network"
 sms_line "project dir" "$DIR"
 
 sms_sec "local model (your offline Claude Code brain)"

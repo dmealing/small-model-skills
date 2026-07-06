@@ -5,9 +5,9 @@ set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 DIR="${1:-$PWD}"; cd "$DIR" 2>/dev/null || { echo "ERROR: no such dir: $DIR"; exit 1; }
 
-sms_head "offline-doctor"
+sms_identity "Read-only: why a build/run fails offline + the local caches/flags to use"
 sms_line "project dir" "$DIR"
-if ping -c1 -W1 "$DNS_PUBLIC" >/dev/null 2>&1; then sms_line "internet" "UP — network is NOT the blocker; the failure is something else"; else sms_line "internet" "DOWN — offline mode"; fi
+if sms_ping "$DNS_PUBLIC"; then sms_line "internet" "UP — network is NOT the blocker; the failure is something else"; else sms_line "internet" "DOWN — offline mode"; fi
 
 sms_sec "per-stack offline options"
 if [ -f package.json ]; then

@@ -84,11 +84,11 @@ LICENSE              MIT
 - Wrappers are read-only. Anything that could change state is **not** in a wrapper — it's text in the
   skill for the human to run.
 - Skills carry no `--dangerously-skip-permissions` in their own definitions or `SKILL.md`s — the
-  read-only-by-design boundary lives in what the wrappers *do*, not in a launcher flag. In practice the
-  owner's own `claude-local`/`claude-qwable`/`claude-agents-a1` launchers run with
-  `--dangerously-skip-permissions` (a deliberate, explicit choice, revisited when this was built — not an
-  oversight): the wrappers themselves stay read-only regardless, so the actual attack surface is unchanged;
-  what's traded away is the human-approval gate on the model's *other* tool calls in that session.
+  read-only-by-design boundary lives in what the wrappers *do*, not in a launcher flag. The
+  `claude-local` launcher (in all its `qwable`/`agents-a1`/raw-tag forms) likewise does **not** skip
+  permissions: it keeps Claude Code's normal permission prompts, consistent with the propose-don't-apply model and
+  `SECURITY.md`. The human-approval gate on the model's tool calls stays in place, and the wrappers stay
+  read-only regardless.
 - Cherry-picked community content (linux-troubleshooting, disk-cleaner analyzer, journalctl forensics)
   is **safety-edited**: destructive commands stripped or moved to human-run suggestions; attribution kept.
 - Secrets never enter the repo. Credentials come from the user's password manager or a local
@@ -98,8 +98,8 @@ LICENSE              MIT
 
 1. Install Ollama; `ollama pull` a tool-capable coder model (`qwen2.5-coder:14b`, `qwen3-coder`, or a
    Qwable GGUF on Ollama ≥ 0.24).
-2. Point Claude Code at it offline (native Anthropic endpoint at `localhost:11434`) via a `freeclaude`
-   shell function.
+2. Point Claude Code at it offline (native Anthropic endpoint at `localhost:11434`) via the `claude-local`
+   launcher (installed onto PATH by `install.sh`).
 3. `./install.sh` — copies skills, links wrappers, and walks you through creating your config.
 4. Ask the offline model to "diagnose the network / why it's slow / prep for offline dev."
 

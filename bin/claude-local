@@ -28,6 +28,8 @@ resolve_model() {
 alias_arg="${CLAUDE_LOCAL_MODEL:-$LOCAL_MODEL_DEFAULT}"
 case "${1:-}" in
   qwable|agents-a1) alias_arg="$1"; shift ;;
+  ""|-*) ;;                    # no model arg, or first arg is a claude flag -> keep the default
+  *) alias_arg="$1"; shift ;;  # any other first arg is a raw Ollama model tag, passed straight through
 esac
 model="$(resolve_model "$alias_arg")"
 
@@ -39,4 +41,4 @@ exec env \
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-  claude --dangerously-skip-permissions --model "$model" "$@"
+  claude --model "$model" "$@"

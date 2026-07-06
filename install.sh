@@ -79,5 +79,5 @@ case ":$PATH:" in *":$BINDIR:"*) : ;; *) echo "  WARNING: $BINDIR is not on PATH
 echo
 echo "Done. Next:"
 echo "  1) edit $CFG"
-echo "  2) make sure Ollama + a tool-capable model + a 'freeclaude' offline launcher are set up (see README)"
+echo "  2) make sure Ollama + a tool-capable model are set up, then launch with 'claude-local' (installed above; see README)"
 echo "  3) ask your offline model: 'diagnose the network' / 'why is my computer slow' / 'prep this project for offline'"
