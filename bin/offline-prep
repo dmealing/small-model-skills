@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# offline-prep — run BEFORE you lose internet (e.g. before a flight). Reports what's cached vs
+# missing so you can keep coding/running apps offline, and prints the exact commands to cache the
+# rest. Read-only: it inspects and proposes; it does not auto-download gigabytes.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+DIR="${1:-$PWD}"; cd "$DIR" 2>/dev/null || { echo "ERROR: no such dir: $DIR"; exit 1; }
+
+sms_head "offline-prep"
+sms_line "project dir" "$DIR"
+
+sms_sec "local model (your offline Claude Code brain)"
+if have ollama; then ollama list 2>/dev/null | awk 'NR>1{print "  have: "$1}' | head -8
+else echo "  ollama not installed — install it + pull a coder model before going offline"; fi
+
+sms_sec "detected stacks + cache status"
+if [ -f package.json ]; then
+  { [ -d node_modules ] && sms_line "node" "node_modules present (ready)"; } || sms_line "node" "node_modules MISSING -> run 'npm install' WHILE ONLINE"
+fi
+if [ -f requirements.txt ] || [ -f pyproject.toml ]; then
+  { [ -d .venv ] || [ -d venv ]; } && sms_line "python" "venv present (ready)" || sms_line "python" "no venv -> create + 'pip install' WHILE ONLINE"
+fi
+if [ -f Cargo.toml ]; then
+  [ -d target ] && sms_line "rust" "target/ built (ready)" || sms_line "rust" "not built -> 'cargo fetch && cargo build' WHILE ONLINE"
+fi
+if [ -f go.mod ] && have go; then sms_line "go" "modcache=$(go env GOMODCACHE 2>/dev/null) -> 'go mod download' WHILE ONLINE"; fi
+if [ -f docker-compose.yml ] || [ -f compose.yaml ] || [ -f Dockerfile ]; then
+  sms_line "docker" "compose/Dockerfile present -> 'docker compose pull' / 'docker pull <img>' WHILE ONLINE"
+  have docker && docker images --format '  cached image: {{.Repository}}:{{.Tag}}' 2>/dev/null | head -6
+fi
+
+sms_sec "pre-flight checklist (do these WHILE ONLINE — propose to the user, don't auto-run)"
+echo "  [ ] local coding model pulled (ollama pull ...)    [ ] deps installed (node_modules/venv/target)"
+echo "  [ ] docker images pulled                           [ ] git fetch the branches you'll need"
+echo "  [ ] offline docs handy (devdocs/zeal) if you use them"
+echo "  [ ] your offline Claude Code launcher (e.g. claude-local) tested against the local model"

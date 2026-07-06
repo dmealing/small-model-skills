@@ -1,0 +1,13 @@
+# Modelfile for Agents-A1 (Claude-Code-ready). Produced by install-model.sh.
+#
+# FROM points at a GGUF whose chat template has had the two tool-parser-breaking guards removed
+# ("System message must be at the beginning", "No user query found in messages") while keeping the
+# model's native Qwen3-Coder XML tool format and <think> reasoning. See ../README.md.
+#
+# Sampling params are Agents-A1's card recommendations. num_ctx is raised from Ollama's small default.
+FROM ./Agents-A1-Q4_K_M-fixed.gguf
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.85
+PARAMETER top_p 0.95
+PARAMETER top_k 20
+PARAMETER presence_penalty 1.1

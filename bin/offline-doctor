@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# offline-doctor — WHILE OFFLINE, diagnose why a build/run is failing for lack of network and point
+# at local caches + the right offline flags. Read-only; proposes commands, runs nothing destructive.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+DIR="${1:-$PWD}"; cd "$DIR" 2>/dev/null || { echo "ERROR: no such dir: $DIR"; exit 1; }
+
+sms_head "offline-doctor"
+sms_line "project dir" "$DIR"
+if ping -c1 -W1 "$DNS_PUBLIC" >/dev/null 2>&1; then sms_line "internet" "UP — network is NOT the blocker; the failure is something else"; else sms_line "internet" "DOWN — offline mode"; fi
+
+sms_sec "per-stack offline options"
+if [ -f package.json ]; then
+  { [ -d node_modules ] && echo "  node: node_modules present -> 'npm ci --offline' or 'npm run <script>' should work"; } \
+    || echo "  node: node_modules MISSING -> 'npm install --prefer-offline' (needs npm cache: $(npm config get cache 2>/dev/null))"
+fi
+if [ -f requirements.txt ] || [ -f pyproject.toml ]; then
+  { { [ -d .venv ] || [ -d venv ]; } && echo "  python: venv present -> activate it; avoid re-installing"; } \
+    || echo "  python: no venv -> 'pip install --no-index --find-links <local-wheels>'"
+fi
+[ -f Cargo.toml ] && echo "  rust: 'cargo build --offline' (uses ~/.cargo registry cache)$( [ -d target ] || echo '  — but no target/ yet; first build needs the cache present')"
+[ -f go.mod ] && have go && echo "  go: 'GOPROXY=off GOFLAGS=-mod=mod go build' (uses \$GOMODCACHE=$(go env GOMODCACHE 2>/dev/null))"
+if [ -f docker-compose.yml ] || [ -f compose.yaml ] || [ -f Dockerfile ]; then
+  echo "  docker: images must already be local. Present:"
+  have docker && docker images --format '    {{.Repository}}:{{.Tag}}' 2>/dev/null | head -6
+  echo "          use 'docker compose up --no-build' if already built; builds needing a remote base image will fail."
+fi
+
+sms_sec "common offline blockers to look for"
+echo "  - a build step that fetches from the internet (curl/wget, remote git submodule, CDN asset)"
+echo "  - app code calling an external API/DNS that now times out -> point it at a local stub/mock or offline config"
+echo "  - package manager hitting the registry instead of the cache -> use the --offline flags above"
+
+sms_sec "verdict"
+echo "  If deps/images are cached (see above), use the per-stack offline flags. If something is genuinely"
+echo "  absent from cache it cannot be built until you're back online. Propose the fix; do not auto-install."

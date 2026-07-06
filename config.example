@@ -1,0 +1,24 @@
+# small-model-skills configuration.
+# Copy to ~/.config/small-model-skills/config and edit. Sourced as shell (KEY=value, no spaces around =).
+# Leave a value blank to auto-detect where possible. Never commit your filled-in copy.
+
+# --- Network ---
+GATEWAY_IP=                  # router/gateway LAN IP (blank = auto-detect from default route)
+PRIMARY_NIC=                # main interface, e.g. eth0 / enp9s0 (blank = auto-detect)
+DNS_LOCAL=                  # local DNS server (e.g. a Pi-hole); blank to skip that check
+DNS_PUBLIC=1.1.1.1          # public resolver to compare against
+DNS_PUBLIC2=9.9.9.9         # secondary public resolver
+
+# --- WAN / failover (interface names AS THE ROUTER labels them, e.g. X1/X2, wan/wan2) ---
+WAN_PRIMARY=                # primary ISP uplink, e.g. X1
+WAN_BACKUP=                 # backup/failover uplink, e.g. X2 (blank if none)
+PRIMARY_ISP_LABEL="primary ISP"
+BACKUP_ISP_LABEL="backup link"
+
+# --- Router module (deeper WAN/failover status; SNMP works without it) ---
+ROUTER_MODULE=              # e.g. sonicwall (blank = generic SNMP only)
+ROUTER_HOST=                # router mgmt IP (blank = GATEWAY_IP)
+ROUTER_API_PORT=443         # vendor REST/mgmt port (SonicWall is often 443 or 8443)
+SNMP_COMMUNITY=public       # SNMP v2c read community
+ROUTER_CRED_ITEM=           # password-manager item for router admin creds (ONLINE only), e.g. op-get item name
+# ROUTER_CRED_FILE=~/.config/small-model-skills/router.cred   # optional cached "user=.../pass=..." (chmod 600) for OFFLINE REST

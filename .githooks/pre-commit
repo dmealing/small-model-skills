@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# This repository is PUBLIC. Block commits that leak absolute local paths or private/
+# other-project names. Delegates to .githooks/leak-scan.sh (staged mode).
+#
+# The committed hooks name NO private project. Private names live ONLY in an untracked
+# denylist so the guard itself never becomes a leak:
+#   git config hooks.denyListPath <path>   (e.g. a file in a private repo), or
+#   .githooks/deny-list.local              (gitignored; copy from deny-list.example)
+#
+# Activate (one-time, per clone):  git config core.hooksPath .githooks
+# Bypass (discouraged):            git commit --no-verify
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+if ! "$ROOT/.githooks/leak-scan.sh"; then
+  echo "  commit blocked — genericize the reference, or (false positive) commit with --no-verify." >&2
+  exit 1
+fi
+exit 0

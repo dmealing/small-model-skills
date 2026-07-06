@@ -1,0 +1,9 @@
+# never commit local credentials or a filled-in config
+*.cred
+/config
+!/config.example
+.DS_Store
+*.swp
+
+# local private denylist for the public-repo leak hooks (real names stay untracked)
+.githooks/deny-list.local

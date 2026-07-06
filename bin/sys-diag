@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# sys-diag — read-only "why is my computer slow?" snapshot (CPU/load/memory/top hogs/thermal).
+# Changes nothing.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+ncpu=$(nproc 2>/dev/null || echo 1)
+load1=$(awk '{print $1}' /proc/loadavg 2>/dev/null)
+
+sms_head "sys-diag"
+sms_sec "load / cpu"
+sms_line "uptime/load" "$(uptime 2>/dev/null | sed 's/.*up /up /')"
+sms_line "load(1m) vs cores" "${load1:-?} / $ncpu"
+
+sms_sec "memory"
+free -h 2>/dev/null | awk '/Mem:|Swap:/{print "  "$0}'
+
+sms_sec "top CPU processes"
+ps -eo pid,comm,%cpu,%mem --sort=-%cpu 2>/dev/null | head -6 | awk 'NR>1{printf "  %-8s %-20s cpu=%-5s%% mem=%s%%\n",$1,$2,$3,$4}'
+
+sms_sec "top memory processes"
+ps -eo pid,comm,%mem,%cpu --sort=-%mem 2>/dev/null | head -6 | awk 'NR>1{printf "  %-8s %-20s mem=%-5s%% cpu=%s%%\n",$1,$2,$3,$4}'
+
+sms_sec "thermal / gpu"
+if have sensors; then sensors 2>/dev/null | grep -iE 'Tctl|Package id|Composite|Tccd|fan' | head -4 | sed 's/^/  /'; else echo "  (lm-sensors not installed)"; fi
+have nvidia-smi && sms_line "gpu util/mem/temp" "$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader 2>/dev/null | head -1)"
+
+sms_sec "verdict"
+hi=$(ps -eo %cpu --sort=-%cpu --no-headers 2>/dev/null | head -1 | cut -d. -f1)
+swapused=$(free 2>/dev/null | awk '/Swap:/{print $3}')
+if [ -n "$load1" ] && awk -v l="$load1" -v c="$ncpu" 'BEGIN{exit !(l > c*1.5)}'; then
+  echo "  HIGH LOAD: 1-min load ($load1) well above core count ($ncpu) -> something is saturating the CPU (see top CPU processes)."
+elif [ "${hi:-0}" -ge 90 ] 2>/dev/null; then
+  echo "  CPU HOG: one process is using ~${hi}% of a core (see top CPU processes)."
+elif [ "${swapused:-0}" -gt 1048576 ] 2>/dev/null; then
+  echo "  MEMORY PRESSURE: heavy swap in use -> RAM may be exhausted (see top memory processes)."
+else
+  if command -v iostat >/dev/null 2>&1; then io="try 'iostat -x 2'"; else io="install sysstat for iostat, or profile one app"; fi
+  echo "  Nominal: load, memory, and per-process usage look normal. If it still feels slow, suspect disk I/O ($io)."
+fi

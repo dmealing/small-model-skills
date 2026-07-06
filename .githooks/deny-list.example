@@ -1,0 +1,15 @@
+# Local denylist for the public-repo leak hooks (TEMPLATE — contains no real names).
+#
+# Two ways to supply the real private/other-project names to block:
+#   1) git config hooks.denyListPath /path/to/private/denylist.txt   (recommended: a file
+#      kept in a PRIVATE repo — single source of truth shared across your public repos)
+#   2) copy this file to .githooks/deny-list.local (gitignored) and add names here.
+#
+# One extended-regex per line. Blank lines and #-comments are ignored. Keeping the real
+# names ONLY outside version control ensures this PUBLIC repo's committed files never name
+# a private project.
+#
+# Examples of the KINDS of patterns to add (replace with your own):
+#   some-private-app
+#   another-client-name
+#   @somescope/

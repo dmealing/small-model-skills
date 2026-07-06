@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# skill-audit — OBJECTIVE metrics + spec-format checks for SKILL.md files.
+# It deliberately does NOT judge content quality (flatness, raw dumps, hardcoded values, destructive
+# commands) — that needs reading + reasoning. Use the 'audit-small-model-skills' skill for the real audit;
+# this just measures, so the reasoning audit starts from facts. Hard-fails only on unambiguous spec limits.
+# Usage: skill-audit [PATH ...]   (default: this repo's skills/)
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+SKILLS_DEFAULT="$BIN_DIR/../skills"
+files=(); add(){ [ -f "$1" ] && files+=("$1"); }
+collect(){ local p="$1"; if [ -f "$p" ]; then add "$p"
+  elif [ -d "$p" ]; then if [ -f "$p/SKILL.md" ]; then add "$p/SKILL.md"; else for d in "$p"/*/SKILL.md; do add "$d"; done; fi; fi; }
+if [ $# -eq 0 ]; then collect "$SKILLS_DEFAULT"; else for a in "$@"; do collect "$a"; done; fi
+[ ${#files[@]} -gt 0 ] || { echo "skill-audit: no SKILL.md found"; exit 2; }
+
+printf '%-28s %-6s %-5s %-5s %-6s %s\n' SKILL name descC bodyL tools signals
+fails=0
+for f in "${files[@]}"; do
+  fm=$(awk 'NR==1&&/^---/{f=1;next} f&&/^---/{exit} f{print}' "$f")
+  body=$(awk '/^---/{c++;next} c>=2{print}' "$f")
+  name=$(printf '%s\n' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)
+  desc=$(printf '%s\n' "$fm" | sed -n 's/^description:[[:space:]]*//p' | head -1)
+  dir=$(basename "$(dirname "$f")")
+  dl=${#desc}; bl=$(printf '%s\n' "$body" | wc -l)
+  tools=$(printf '%s\n' "$body" | awk 'tolower($0)~/^#+[ ]*tools/{t=1;next} t&&/^#+ /{t=0} t&&/^[-*] /{c++} END{print c+0}')
+
+  # objective spec-format checks (a spec, not a heuristic)
+  nstat=ok; [ -z "$name" ] && nstat=MISS
+  { [ -n "$name" ] && ! printf '%s' "$name" | grep -qE '^[a-z0-9-]{1,64}$'; } && nstat=BAD
+  printf '%s' "$name" | grep -qiE 'anthropic|claude' && nstat=BAD
+  fl=""
+  [ "$nstat" != ok ] && { fl="$fl name!"; fails=$((fails+1)); }
+  [ -z "$desc" ] && { fl="$fl desc-missing!"; fails=$((fails+1)); }
+  [ "$dl" -gt 1024 ] && { fl="$fl desc>1024!"; fails=$((fails+1)); }
+  [ "$bl" -gt 500 ] && { fl="$fl body>500!"; fails=$((fails+1)); }
+  [ -n "$name" ] && [ "$name" != "$dir" ] && fl="$fl name!=dir"
+
+  # informational signals for the reasoning auditor (NOT verdicts)
+  sig=""
+  ipn=$(printf '%s\n' "$body" | grep -oE '\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b' | wc -l); [ "$ipn" -gt 0 ] && sig="${sig}ip:$ipn "
+  hpn=$(printf '%s\n' "$body" | grep -c '/home/'); [ "$hpn" -gt 0 ] && sig="${sig}home:$hpn "
+  [ -z "$sig" ] && sig="-"
+  printf '%-28s %-6s %-5s %-5s %-6s %s%s\n' "$dir" "$nstat" "$dl" "$bl" "$tools" "$sig" "$fl"
+done
+echo
+echo "metrics only — 'ip:'/'home:' are signals to CHECK by reading, not failures."
+echo "For the real content audit (flat? read-only? facts vs. world-knowledge? raw dumps?),"
+echo "use the audit-small-model-skills skill (LLM reasoning against docs/authoring-small-model-skills.md)."
+echo "spec-format failures: $fails"
+[ "$fails" -eq 0 ]

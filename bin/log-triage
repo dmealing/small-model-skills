@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# log-triage — read-only systemd + journal triage ("what service is broken / what's erroring?").
+# Changes nothing.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_head "log-triage"
+
+sms_sec "failed systemd units"
+failed=""
+if have systemctl; then
+  failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}')
+  if [ -n "$failed" ]; then echo "$failed" | sed 's/^/  FAILED: /'; else echo "  none — no failed units"; fi
+else echo "  (systemctl not available)"; fi
+
+nerr=0
+sms_sec "recent errors (priority err+, last 1h)"
+if have journalctl; then
+  journalctl -p err -S -1h --no-pager -q 2>/dev/null | tail -12 | sed 's/^/  /'
+  nerr=$(journalctl -p err -S -1h --no-pager -q 2>/dev/null | wc -l)
+  [ "$nerr" -eq 0 ] && echo "  (none in the last hour)"
+else echo "  (journalctl not available — may need sudo/adm group)"; fi
+
+sms_sec "top error sources this boot"
+have journalctl && journalctl -b -p err --no-pager -q 2>/dev/null \
+  | awk '{print $5}' | sed 's/\[[0-9]*\]:\?$//; s/:$//' | grep -v '^$' | sort | uniq -c | sort -rn | head -6 | sed 's/^/  /'
+
+sms_sec "verdict"
+if [ -n "$failed" ]; then
+  echo "  FAILED units present -> inspect: systemctl status <unit>   and   journalctl -u <unit> -b --no-pager"
+elif [ "${nerr:-0}" -gt 0 ]; then
+  echo "  No failed units, but ${nerr} error line(s) in the last hour -> drill into the top source above with journalctl -u <name>."
+else
+  echo "  Clean: no failed units and no errors in the last hour."
+fi

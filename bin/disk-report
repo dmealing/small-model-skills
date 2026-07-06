@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# disk-report — read-only "what's using my disk?" analysis. Never deletes anything.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_head "disk-report"
+sms_sec "filesystems"
+df -h -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null | awk 'NR==1||/%/{print "  "$0}' | head -14
+
+# pick the fullest real mount to drill into
+target=$(df -P -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null | awk 'NR>1{u=$5; gsub("%","",u); if(u+0>m){m=u+0;p=$6}} END{print p}')
+target="${target:-/}"
+sms_sec "biggest dirs one level under $target"
+du -x -h -d1 "$target" 2>/dev/null | sort -rh | head -12 | sed 's/^/  /'
+
+sms_sec "common space hogs"
+for d in /var/log "$HOME/.cache" /var/cache /var/lib/docker /tmp; do
+  [ -d "$d" ] && sms_line "$d" "$(du -sh "$d" 2>/dev/null | cut -f1)"
+done
+have docker && sms_line "docker reclaimable" "$(docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"
+
+sms_sec "verdict / suggestions (PROPOSE ONLY — never auto-delete)"
+echo "  Space concentration is shown above. Safe things a human can reclaim after confirming:"
+echo "   - package caches:   sudo apt clean   |   pip cache purge   |   npm cache clean --force"
+echo "   - journal logs:     sudo journalctl --vacuum-size=200M"
+echo "   - docker (confirm): docker system prune        (removes UNUSED images/containers/networks)"
+echo "   - biggest files:    find \"$target\" -xdev -type f -printf '%s %p\\n' | sort -rn | head"
+echo "  Do NOT delete anything the user has not confirmed is safe."
