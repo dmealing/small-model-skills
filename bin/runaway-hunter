@@ -36,9 +36,12 @@ if [ -n "$pat" ]; then
 fi
 
 sms_sec "verdict"
-if [ -n "$runaway" ] || [ -n "$offenders" ]; then
+if [ -n "$runaway" ]; then
   echo "  RUNAWAY — a process is pegging a core for hours (a classic freeze precursor)."
   sms_help "Inspect first: 'ps -fp <pid>'. If safe to stop: 'kill <pid>', then only if it ignores that, 'kill -9 <pid>'. Never kill something mid-write."
+elif [ -n "$offenders" ]; then
+  echo "  KNOWN OFFENDER(S) RUNNING — one or more processes match your RUNAWAY_OFFENDERS watch-list; check their cpu/age in the offenders table above (they may be idle or short-lived) before deciding to kill."
+  sms_help "Inspect first: 'ps -fp <pid>'. If it's genuinely stuck or hot, 'kill <pid>', then only if it ignores that, 'kill -9 <pid>'. Never kill something mid-write."
 elif [ -n "$wedged" ]; then
   echo "  WEDGED/ZOMBIE present — a lone zombie is usually harmless (its parent will reap it); a pile-up, or a D/U-state process, points at a stuck driver or mount."
   sms_help "Zombies: inspect the PARENT ('ps -o ppid= -p <pid>' then 'ps -fp <ppid>') — reaping/restarting the parent clears them. Never 'kill -9' a D/U-state process; find what it's blocked on instead."
