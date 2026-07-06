@@ -13,7 +13,11 @@ memorized device syntax. The scripts read this machine's config and print the co
 ## Rules
 - Read-only. Run diagnostics freely. NEVER run a state-changing command (restart a service, bounce an
   interface, flush DNS, edit config) yourself — describe it and let the user run it.
-- Use the wrappers; do not hand-compose raw `snmpwalk`/`curl` to the router.
+- **Run the wrapper — never hand-roll the check or fetch credentials.** Do not compose raw `snmpwalk`/`curl`
+  to the router, and NEVER fetch router/firewall credentials yourself (no `op-get`, no reading a cred file,
+  no manual login). `router-status` authenticates internally and never prints a secret — improvising leaks
+  the password to the terminal and tends to run away into a huge, wrong answer. If you catch yourself about
+  to fetch a credential, stop and run `router-status`.
 - Keep it tight: run a step, read its verdict line, move on. Do not dump large output into your reply.
 
 ## Runbook
