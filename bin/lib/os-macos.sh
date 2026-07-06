@@ -28,7 +28,7 @@ sms_swap_used_kb(){
   # "total = 4096.00M  used = 3040.56M  free = 1055.44M  (encrypted)" — value is two fields
   # after the "used" token ("used" "=" "3040.56M").
   sysctl -n vm.swapusage 2>/dev/null \
-    | awk '{for(i=1;i<=NF;i++) if($i=="used"){v=$(i+2); gsub(/M$/,"",v); print v*1024; exit}}'
+    | awk '{for(i=1;i<=NF;i++) if($i=="used"){v=$(i+2); gsub(/M$/,"",v); printf "%d\n", v*1024; exit}}'
 }
 
 sms_top_procs_cpu(){ ps -Aceo pid,comm,%cpu,%mem -r 2>/dev/null | tail -n +2 | head -"${1:-5}"; }

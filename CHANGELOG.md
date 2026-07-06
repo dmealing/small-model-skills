@@ -44,3 +44,19 @@ All notable changes to this project are documented here. The format is based on
 - `bin/lib/os-macos.sh`: `launchctl list`'s "failed services" analogue was 100% noise unfiltered —
   every quiet, healthy launchd job reports `-9` (SIGKILL) as normal teardown; only non-`-9`/`-15`
   exits are surfaced now.
+- `bin/router-status`, `bin/offline-prep`, `bin/offline-doctor`: still called `sms_head`, which the AXI
+  refactor had removed (renamed to `sms_identity`) — every run printed `sms_head: command not found` and
+  emitted no identity header. Migrated the three stragglers to `sms_identity`.
+- `bin/claude-local`: removed `--dangerously-skip-permissions` from the launched `claude`. It let the local
+  model auto-run the state-changing fixes the skills are designed to only *propose*, contradicting the
+  read-only-by-default thesis and `SECURITY.md`.
+- `bin/lib/os-macos.sh`: `sms_swap_used_kb` printed `v*1024` via awk, which renders GB-scale swap in
+  scientific notation (`3040.56M → 3.11353e+06`); `sys-diag`'s integer swap-pressure test then errored and
+  silently never fired on macOS. Now `printf "%d"`.
+- `bin/offline-doctor`: its internet check called raw `ping -c1 -W1`; on macOS `-W` is milliseconds, so it
+  reported "DOWN" even when up. Routed through `sms_ping` (correct per-OS flags) like the other wrappers.
+- `bin/claude-local`: a raw model tag (`claude-local qwen3-coder-cc`) was silently ignored — the launcher
+  fell back to the default model and leaked the tag into `claude`'s args. Added the raw-tag case (still
+  guards flags/empty).
+- `install.sh`: the final hint still told users to set up a `freeclaude` launcher; it now points at
+  `claude-local`, which the installer itself puts on PATH.

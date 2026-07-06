@@ -5,7 +5,7 @@ set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 GAP="${SW_SAMPLE_GAP:-2}"
 
-sms_head "router-status"
+sms_identity "Read-only: router/firewall WAN links + failover (SNMP + optional vendor module)"
 have snmpwalk || { echo "  ERROR: net-snmp (snmpwalk) not installed"; exit 1; }
 [ -n "$ROUTER_HOST" ] || { echo "  ERROR: no router host (set ROUTER_HOST or GATEWAY_IP in config)"; exit 1; }
 
