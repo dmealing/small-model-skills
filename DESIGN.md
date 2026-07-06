@@ -23,10 +23,11 @@ internet-less model into a useful **diagnostics + offline-dev assistant** for a 
    personal at once — your machine's values live in your config, never in the repo.
 6. **Agent-ergonomic output (in design).** Every consumer of `bin/` output is an agent reading stdout,
    not a human at a terminal — so wrapper output is moving to
-   [AXI](https://axi.md/) (Agent eXperience Interface) conventions: TOON for list-shaped data (e.g. the
-   top-process table in `sys-diag`), an identity header, structured `help[]` next-step hints alongside
-   the existing plain-English verdict, and meaningful exit codes. Credit to axi.md for the conventions;
-   see [Platform support & AXI conventions](#platform-support--axi-conventions-in-design) below.
+   [AXI](https://axi.md/) (Agent eXperience Interface) conventions, created by
+   [Kun Chen](https://x.com/kunchenguid): TOON for list-shaped data (e.g. the top-process table in
+   `sys-diag`), an identity header, structured `help[]` next-step hints alongside the existing
+   plain-English verdict, and meaningful exit codes. See
+   [Platform support & AXI conventions](#platform-support--axi-conventions-in-design) below.
 
 ## Architecture
 
@@ -115,8 +116,9 @@ WSL2 runs `os-linux.sh` unmodified — `install.sh` treats a detected WSL2 envir
 
 **AXI conventions.** Since every `bin/` wrapper is an agent-facing CLI (invoked by a local model
 through Claude Code, never by a human directly), output is adopting
-**[AXI — Agent eXperience Interface](https://axi.md/)** conventions where they fit a read-only
-diagnostic snapshot:
+**[AXI — Agent eXperience Interface](https://axi.md/)** conventions, created by
+**[Kun Chen](https://x.com/kunchenguid)** ([github.com/kunchenguid](https://github.com/kunchenguid)),
+where they fit a read-only diagnostic snapshot:
 - an identity header (`bin: ~/.local/bin/sys-diag` + one-line description)
 - TOON for genuinely list-shaped data (process tables, failed-unit lists)
 - structured `help[]` next-step hints alongside the existing plain-English verdict sentence

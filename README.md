@@ -198,8 +198,9 @@ small model**, not just a frontier one.
 
 ## Acknowledgments
 Output-format conventions for `bin/` wrappers (identity header, TOON, structured help hints, exit
-codes) are being adopted from **[AXI — Agent eXperience Interface](https://axi.md/)**, credit to its
-authors for the standard.
+codes) are being adopted from **[AXI — Agent eXperience Interface](https://axi.md/)**, created by
+**[Kun Chen](https://x.com/kunchenguid)** ([github.com/kunchenguid](https://github.com/kunchenguid)).
+Credit to him for the standard.
 
 ## License
 MIT — see `LICENSE`.
