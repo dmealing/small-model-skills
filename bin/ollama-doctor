@@ -59,8 +59,15 @@ sms_sec "verdict"
 if [ "${nmodels:-0}" -eq 0 ]; then
   echo "  NO MODELS — Ollama is up but nothing is pulled; you can't run a local model offline yet."
   sms_help "Pull a tool-capable coder model WHILE ONLINE, e.g. 'ollama pull qwen2.5-coder:14b'"
+elif [ -z "$vfree" ]; then
+  if [ "$SMS_OS" = macos ]; then
+    echo "  HEALTHY (unified memory) — daemon up, ${nmodels:-?} model(s) available; on Apple Silicon models share system RAM, so there is no discrete VRAM to spill from."
+  else
+    echo "  HEALTHY (CPU-only) — daemon up, ${nmodels:-?} model(s) available; no NVIDIA GPU detected, so models run on CPU. Expected on a CPU-only box — slower, but fine."
+  fi
+  sms_help "Run 'claude-local' to point Claude Code at a local model with these skills offline"
 elif [ "${spill:-0}" -gt 0 ]; then
-  echo "  CPU SPILL — a loaded model doesn't fully fit in VRAM and is running partly on CPU (slow inference)."
+  echo "  CPU SPILL — a GPU is present but a loaded model doesn't fully fit in VRAM and is running partly on CPU (slow inference)."
   sms_help "Use a smaller model or quant, lower num_ctx, or free VRAM — see the in_gpu% column above"
 else
   msg="  HEALTHY — daemon up, ${nmodels:-?} model(s) available"; [ "${loaded:-0}" -gt 0 ] && msg="$msg, loaded model fits in GPU"

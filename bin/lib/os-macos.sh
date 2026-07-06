@@ -81,7 +81,7 @@ sms_prev_boot_kernel_tail(){ local p; p="$(ls -t /Library/Logs/DiagnosticReports
   [ -n "$p" ] && { echo "panic report: $p"; tail -n "${1:-40}" "$p" 2>/dev/null; } || echo "(no panic reports found)"; }
 sms_reset_reason(){ ls -t /Library/Logs/DiagnosticReports/*.panic 2>/dev/null | head -1 | sed 's/^/last panic report: /'; }
 sms_mce_summary(){ echo "(n/a on macOS — no rasdaemon; see panic reports)"; }
-sms_watchdog_status(){ echo "modules=n/a device=n/a systemd_runtime=n/a (macOS manages its own watchdog)"; }
+sms_watchdog_status(){ echo "modules=n/a device=n/a systemd_runtime=n/a armed=n/a (macOS manages its own watchdog)"; }
 # emit: pid age_seconds cpu mem stat comm  (macOS etime -> seconds). comm is the trailing field and
 # may contain spaces (e.g. "Google Chrome") — consumers must read it as $6..NF, not just $6.
 sms_procs_aged(){ ps -Aceo pid,etime,pcpu,pmem,stat,comm -r 2>/dev/null | tail -n +2 | awk '

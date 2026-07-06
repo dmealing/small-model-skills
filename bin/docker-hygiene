@@ -37,11 +37,14 @@ dang="$(docker images -qf dangling=true 2>/dev/null | grep -c .)"
 sms_line "count" "$dang"
 
 sms_sec "verdict"
-if [ "$orphans" -gt 0 ] || [ "${dead:-0}" -gt 0 ] || [ "${dang:-0}" -gt 0 ]; then
-  echo "  RECLAIMABLE — $orphans orphan volume(s), ${dead:-0} dead container(s), ${dang:-0} dangling image(s)."
+bcache="$(docker system df --format '{{.Type}}|{{.Reclaimable}}' 2>/dev/null | awk -F'|' '$1=="Build Cache"{print $2; exit}')"
+bcache="${bcache%% (*}"
+bcache_has="$(printf '%s' "$bcache" | awk '{print (($0+0)>0)?1:0}')"
+if [ "$orphans" -gt 0 ] || [ "${dead:-0}" -gt 0 ] || [ "${dang:-0}" -gt 0 ] || [ "${bcache_has:-0}" -eq 1 ]; then
+  echo "  RECLAIMABLE — $orphans orphan volume(s), ${dead:-0} dead container(s), ${dang:-0} dangling image(s), ${bcache:-0B} build cache."
   sms_help "Review first (these delete data): 'docker container prune' + 'docker image prune'; remove the listed orphan volumes with 'docker volume rm <name>'. Do NOT 'docker volume prune' blindly — check labels first." \
-           "'docker builder prune' reclaims build cache (see 'docker system df' above)"
+           "'docker builder prune' reclaims the ${bcache:-0B} build cache (see 'docker system df' above)"
 else
-  echo "  Clean — no orphan volumes, dead containers, or dangling images worth reclaiming."
+  echo "  Clean — no orphan volumes, dead containers, dangling images, or reclaimable build cache."
 fi
 exit 0

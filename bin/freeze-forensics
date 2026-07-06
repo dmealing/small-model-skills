@@ -41,7 +41,8 @@ mce="$(sms_mce_summary)"; printf '%s\n' "${mce:-(none found)}" | head -6 | sed '
 sms_sec "watchdog (auto-reboot on freeze) — is it actually armed?"
 wd="$(sms_watchdog_status)"; sms_line "watchdog" "$wd"
 case "$wd" in
-  *device=none*) sms_help "No /dev/watchdog is claimed — a freeze will hang indefinitely instead of auto-rebooting. Arm a hardware watchdog (e.g. sp5100_tco/iTCO) or systemd RuntimeWatchdogSec." ;;
+  *device=none*) sms_help "No /dev/watchdog exists — a freeze will hang indefinitely instead of auto-rebooting. Arm a hardware watchdog (e.g. sp5100_tco/iTCO) or systemd RuntimeWatchdogSec." ;;
+  *armed=no*)    sms_help "A /dev/watchdog exists but nothing appears to be petting it (RuntimeWatchdogSec unset, no watchdog daemon) — a freeze may NOT auto-reboot. Arm it via RuntimeWatchdogSec= in /etc/systemd/system.conf or a watchdog daemon." ;;
 esac
 
 sms_sec "mitigations / kernel"
@@ -60,10 +61,10 @@ fi
 sms_sec "verdict"
 if [ "$pc" = 1 ]; then
   echo "  LAST SESSION ENDED ABRUPTLY — treat it as a freeze/panic. The kernel tail + hardware errors above are the best clues."
-  sms_help "Match the kernel tail to a known signature, and confirm the watchdog shows a claimed device so the NEXT freeze auto-reboots"
+  sms_help "Match the kernel tail to a known signature, and confirm the watchdog line above shows armed=yes so the NEXT freeze auto-reboots"
 elif [ "$pc" = 0 ]; then
   echo "  No freeze on record — the last shutdown was clean."
-  sms_help "Good moment to confirm the watchdog line above shows a claimed device"
+  sms_help "Good moment to confirm the watchdog line above shows armed=yes (something is actually petting it)"
 elif [ "${nboots:-0}" -le 1 ]; then
   echo "  LIMITED HISTORY — only the current boot is in the journal, so the previous session can't be reconstructed here."
   sms_help "Enable a persistent journal and/or a netconsole black-box (FREEZE_REMOTE_LOG_CMD) to capture the next freeze; the watchdog + cmdline mitigations above still show whether you're protected right now"

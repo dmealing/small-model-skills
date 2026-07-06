@@ -52,6 +52,13 @@ best at the very start/end of context and degrades in the middle, worse for weak
 - **Say run vs. read explicitly:** "Run `net-diag`" (execute) vs "See `x.md` for the algorithm" (reference).
 - **Return short, structured output — never raw dumps.** A wrapper summarizes to a ~20-line digest with a
   verdict; it does not pipe a full `journalctl`/`df`/log into context (floods the attention budget).
+- **No-overclaim verdicts.** A verdict MUST NOT assert one definitive conclusion when the right reading
+  depends on context the wrapper can't know (is a GPU *expected*, is this process *supposed* to run, is the
+  watchdog actually being *petted*). State the facts plus the clearly-labeled alternatives and flag the
+  uncertainty, so the small model makes the final contextual call between labeled options instead of acting
+  on a confidently-wrong verdict. E.g. no discrete GPU → "models run on CPU (expected on a CPU-only box)",
+  not "CPU SPILL — free VRAM"; a `/dev/watchdog` node with nothing petting it → "armed=no — may NOT
+  auto-reboot", not "protected."
 - **Scripts solve, not punt:** handle their own errors with specific messages; no unexplained magic numbers.
 - **Cross-platform primitives:** never call an OS-specific command directly (`nproc`, `ip`, `systemctl`,
   GNU-flavored `ps`/`df`/`du` flags, …) — call the `sms_*` helper in `bin/lib/common.sh` instead

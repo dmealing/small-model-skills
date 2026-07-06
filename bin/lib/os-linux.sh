@@ -50,10 +50,16 @@ sms_mce_summary(){
   if have ras-mc-ctl; then ras-mc-ctl --summary 2>/dev/null
   elif have journalctl; then journalctl -k -b -1 --no-pager -q 2>/dev/null | grep -iE 'machine check|hardware error|\bmce\b' | tail -5; fi; }
 sms_watchdog_status(){
-  local mods dev sd
+  local mods dev sd p daemon="" armed
   mods="$(lsmod 2>/dev/null | awk '$1 ~ /wdt|_tco|watchdog/{print $1}' | paste -sd, -)"
   dev="$(ls /dev/watchdog* 2>/dev/null | paste -sd, -)"
   sd="$(systemctl show -p RuntimeWatchdogUSec --value 2>/dev/null)"
-  echo "modules=${mods:-none} device=${dev:-none} systemd_runtime=${sd:-0}"; }
+  for p in $(pgrep -x 'watchdog|wd_keepalive|watchdogd' 2>/dev/null); do
+    [ -n "$(tr -d '\0' < "/proc/$p/cmdline" 2>/dev/null)" ] && { daemon="$p"; break; }
+  done
+  if [ -z "$dev" ]; then armed=none
+  elif { [ -n "$sd" ] && [ "$sd" != 0 ]; } || [ -n "$daemon" ]; then armed=yes
+  else armed=no; fi
+  echo "modules=${mods:-none} device=${dev:-none} systemd_runtime=${sd:-0} armed=${armed}"; }
 # emit: pid age_seconds cpu mem stat comm  (sorted by cpu desc)
 sms_procs_aged(){ ps -eo pid,etimes,pcpu,pmem,stat,comm --sort=-pcpu --no-headers 2>/dev/null; }
