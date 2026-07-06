@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# claude-local — run Claude Code against a local Ollama model, fully offline.
+# Usage: claude-local [qwable|agents-a1|<raw ollama model tag>] [-- claude args...]
+#   No arg           -> $CLAUDE_LOCAL_MODEL env, else LOCAL_MODEL_DEFAULT from config, else agents-a1.
+#   qwable/agents-a1 -> resolved via config (LOCAL_MODEL_QWABLE/LOCAL_MODEL_AGENTS_A1), overridable.
+#   anything else    -> passed straight through as an Ollama model tag (e.g. a raw hf.co/... string).
+# Intentionally has no short alias for llama3.3:70b — a 70B local load is a real resource risk;
+# require the full `ollama pull`ed tag explicitly (e.g. `claude-local llama3.3:70b`) rather than a
+# one-keystroke shortcut.
+set -euo pipefail
+
+SMS_CONFIG="${SMS_CONFIG:-$HOME/.config/small-model-skills/config}"
+# shellcheck disable=SC1090
+[ -r "$SMS_CONFIG" ] && . "$SMS_CONFIG"
+
+: "${LOCAL_MODEL_DEFAULT:=agents-a1}"
+: "${LOCAL_MODEL_QWABLE:=hf.co/Mia-AiLab/Qwable-3.6-27b}"
+: "${LOCAL_MODEL_AGENTS_A1:=agents-a1}"
+
+resolve_model() {
+  case "$1" in
+    qwable) printf '%s' "$LOCAL_MODEL_QWABLE" ;;
+    agents-a1) printf '%s' "$LOCAL_MODEL_AGENTS_A1" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+alias_arg="${CLAUDE_LOCAL_MODEL:-$LOCAL_MODEL_DEFAULT}"
+case "${1:-}" in
+  qwable|agents-a1) alias_arg="$1"; shift ;;
+esac
+model="$(resolve_model "$alias_arg")"
+
+echo "claude-local: $alias_arg -> $model" >&2
+exec env \
+  ANTHROPIC_BASE_URL="http://localhost:11434" \
+  ANTHROPIC_AUTH_TOKEN="ollama" \
+  ANTHROPIC_API_KEY="" \
+  ANTHROPIC_MODEL="$model" \
+  ANTHROPIC_SMALL_FAST_MODEL="$model" \
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+  claude --dangerously-skip-permissions --model "$model" "$@"

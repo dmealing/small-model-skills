@@ -83,8 +83,12 @@ LICENSE              MIT
 
 - Wrappers are read-only. Anything that could change state is **not** in a wrapper — it's text in the
   skill for the human to run.
-- Skills carry no `--dangerously-skip-permissions`; the local `freeclaude` runs with normal permission
-  prompts (human-in-the-loop is the gate, per the owner's preference — no auto-mutation).
+- Skills carry no `--dangerously-skip-permissions` in their own definitions or `SKILL.md`s — the
+  read-only-by-design boundary lives in what the wrappers *do*, not in a launcher flag. In practice the
+  owner's own `claude-local`/`claude-qwable`/`claude-agents-a1` launchers run with
+  `--dangerously-skip-permissions` (a deliberate, explicit choice, revisited when this was built — not an
+  oversight): the wrappers themselves stay read-only regardless, so the actual attack surface is unchanged;
+  what's traded away is the human-approval gate on the model's *other* tool calls in that session.
 - Cherry-picked community content (linux-troubleshooting, disk-cleaner analyzer, journalctl forensics)
   is **safety-edited**: destructive commands stripped or moved to human-run suggestions; attribution kept.
 - Secrets never enter the repo. Credentials come from the user's password manager or a local
@@ -99,43 +103,72 @@ LICENSE              MIT
 3. `./install.sh` — copies skills, links wrappers, and walks you through creating your config.
 4. Ask the offline model to "diagnose the network / why it's slow / prep for offline dev."
 
-## Platform support & AXI conventions (in design)
+## Platform support & AXI conventions
 
-Built and tested on Linux today; every `bin/` wrapper currently calls Linux-only primitives directly
-(`nproc`, `/proc/loadavg`, `free`, GNU-flavored `ps`/`df`/`du` flags, `systemctl`/`journalctl`,
-`iproute2`). Full design: [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md).
+Built on Linux originally; tested and now working natively on **macOS** as well (Doug's M4 Max is the
+second real consumer/CI target, alongside the original Linux workstation). Full design:
+[`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md).
 
-**Cross-platform.** OS-specific primitives move behind shared function names (`sms_nproc`,
+**Cross-platform.** OS-specific primitives live behind shared function names (`sms_nproc`,
 `sms_meminfo`, `sms_top_procs_cpu`, `sms_failed_services`, …) with one implementation file per OS —
-`bin/lib/os-linux.sh` (today's behavior, unchanged) and a new `bin/lib/os-macos.sh`
-(`sysctl`/`vm_stat`/`launchd`/`log show`). `bin/lib/common.sh` detects the OS once and sources the
-right file. Wrapper logic, digest structure, and every `skills/*/SKILL.md` file are untouched — the
-OS split stays entirely below the model-facing layer. Windows support means **WSL2**, not a native
-PowerShell port: this project has no Windows box to test/maintain a from-scratch rewrite against, and
-WSL2 runs `os-linux.sh` unmodified — `install.sh` treats a detected WSL2 environment as Linux.
+`bin/lib/os-linux.sh` (original behavior, unchanged) and `bin/lib/os-macos.sh`
+(`sysctl`/`vm_stat`/`route`/`launchctl`/`log show`). `bin/lib/common.sh` detects the OS once (`SMS_OS`)
+and sources the matching file. Wrapper logic, digest structure, and every `skills/*/SKILL.md` file stay
+untouched — the OS split lives entirely below the model-facing layer. Windows support means **WSL2**,
+not a native PowerShell port: WSL2 runs `os-linux.sh` unmodified; `install.sh` detects bare (non-WSL2)
+Windows and points at WSL2 setup instead of failing deep inside some later script.
+
+Bugs the macOS pass actually caught (worth recording — these are the reason "index from the end" and
+`-x` show up as hard rules in the authoring doc, not just style preferences): `vm_stat`'s field position
+for a value shifts with the label's word count (`Pages active:` vs `Pages wired down:`) — fixed by
+indexing from `$(NF-1)`, not a literal `$2`. `du` without `-x` silently walked through an APFS firmlink
+(`/` and `/System/Volumes/Data` share a device ID) into a real, separate, occasionally-stalled network
+mount (`~/Backups`, SMB) — the exact failure mode in [[nas-backup-lag-pattern]] memory, here triggered by
+a diagnostic script instead of a backup job. `ps`'s `comm` column can contain literal spaces on macOS
+(`"Microsoft Teams Helper (Renderer)"`), which broke naive whitespace-split parsing that happened to work
+on Linux by luck (Linux `comm` is normally one token) — fixed with a shared `sms_ps_rows` helper that
+joins from the *second* field to *N-2*, keeping the true first/last two columns intact regardless of
+how many words are in between. `launchctl list`'s failed-jobs analogue was **100% noise** unfiltered —
+every quiet, healthy launchd job on this machine reports `-9` (SIGKILL) as its last exit status as part
+of completely normal agent teardown; only non-`-9`/`-15` exits are worth surfacing.
 
 **AXI conventions.** Since every `bin/` wrapper is an agent-facing CLI (invoked by a local model
-through Claude Code, never by a human directly), output is adopting
+through Claude Code, never by a human directly), output follows
 **[AXI — Agent eXperience Interface](https://axi.md/)** conventions, created by
-**[Kun Chen](https://x.com/kunchenguid)** ([github.com/kunchenguid](https://github.com/kunchenguid)),
-where they fit a read-only diagnostic snapshot:
-- an identity header (`bin: ~/.local/bin/sys-diag` + one-line description)
-- TOON for genuinely list-shaped data (process tables, failed-unit lists)
-- structured `help[]` next-step hints alongside the existing plain-English verdict sentence
+**[Kun Chen](https://x.com/kunchenguid)** ([github.com/kunchenguid](https://github.com/kunchenguid)):
+- an identity header (`bin: ~/.local/bin/sys-diag` + one-line description) — `sms_identity` in `common.sh`
+- TOON for genuinely list-shaped data (process tables, failed-unit lists) — `sms_toon`
+- structured `help[]` next-step hints alongside the existing plain-English verdict sentence — `sms_help`
 - meaningful exit codes (`0` = diagnosis completed, even if it found a problem; `1` = the tool itself
   failed; `2` = usage error)
 
 Not adopted: AXI's mutation/idempotency and pagination/aggregate-count conventions don't apply —
-these wrappers are read-only single-shot snapshots, not stateful list/mutate resources. AXI's
-session-hook ambient-context feature (surfacing e.g. network/disk health at session start via a
-Claude Code/Codex/OpenCode `SessionStart` hook) is a well-matched idea for this project's own noted
-weakness (small models don't reliably auto-trigger skills from a vague prompt) but is scoped as a
-**separate follow-on design**, since it touches hooks/settings.json rather than `bin/`.
+these wrappers are read-only single-shot snapshots, not stateful list/mutate resources.
+
+**AXI session-hook ambient context** (`claude-hooks/session-start-ambient-context.sh`) — originally
+scoped as a separate follow-on (see the design spec), now built: a Claude Code `SessionStart` hook that
+runs `sys-diag` and injects its digest as ambient context, but *only* for local-model sessions (detected
+by `ANTHROPIC_BASE_URL` pointing at the local Ollama endpoint `claude-local` sets — a single string
+comparison, so it's a genuine no-op for every normal cloud Claude Code session). Addresses this project's
+own documented weakness: small models don't reliably auto-trigger a skill from a vague prompt, so surfacing
+the health digest up front means the model already has the facts without needing "use system-triage" said
+explicitly. Not wired into `~/.claude/settings.json` by `install.sh` automatically — that's a global file
+shared by every Claude Code session on the machine, so adding the hook is a separate, visible step (see
+README's Setup section), not something an installer silently does to your global config.
+
+## Local model launcher
+
+`bin/claude-local [qwable|agents-a1|<raw ollama tag>]` — one launcher, config-driven
+(`LOCAL_MODEL_QWABLE`/`LOCAL_MODEL_AGENTS_A1`/`LOCAL_MODEL_DEFAULT` in `config.example`), replacing three
+near-duplicate shell functions that used to live directly in `~/.zshrc`. Deliberately has **no short alias
+for a 70B+ model** — picking one requires spelling out the full Ollama tag
+(`claude-local llama3.3:70b`), not a single memorable word, because loading a model that size is a real
+resource commitment on a laptop (it's taken this machine down before).
 
 ## Roadmap
 
 - v1: the catalog above, SonicWall router module, Doug's machine as first consumer.
-- In design: cross-platform (macOS native + Windows via WSL2) and AXI output conventions — see above.
+- Done: cross-platform (macOS native + Windows via WSL2), AXI output conventions, the `claude-local`
+  launcher, and the AXI session-hook ambient-context follow-on — see above.
 - Later: publish public repo + docs; add router modules (OPNsense/pfSense/UniFi); add `grammar/` GBNF
-  files to constrain tool-call JSON for the weakest models; optional `system-review` deep-dive port;
-  possible follow-on: AXI session-hook ambient context.
+  files to constrain tool-call JSON for the weakest models; optional `system-review` deep-dive port.

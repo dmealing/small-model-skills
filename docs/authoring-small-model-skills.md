@@ -53,6 +53,18 @@ best at the very start/end of context and degrades in the middle, worse for weak
 - **Return short, structured output — never raw dumps.** A wrapper summarizes to a ~20-line digest with a
   verdict; it does not pipe a full `journalctl`/`df`/log into context (floods the attention budget).
 - **Scripts solve, not punt:** handle their own errors with specific messages; no unexplained magic numbers.
+- **Cross-platform primitives:** never call an OS-specific command directly (`nproc`, `ip`, `systemctl`,
+  GNU-flavored `ps`/`df`/`du` flags, …) — call the `sms_*` helper in `bin/lib/common.sh` instead
+  (`sms_nproc`, `sms_loadavg`, `sms_top_procs_cpu`, `sms_default_gw`, `sms_failed_services`, …). Add a new
+  helper to *both* `bin/lib/os-linux.sh` and `bin/lib/os-macos.sh` if one doesn't exist yet — never fork
+  wrapper logic per-OS. A silent-degrade bug beats a missing binary: verify field positions against real
+  output on both platforms (BSD/GNU `ps`, `df`, `vm_stat` field counts differ by label length — index from
+  the end, not a fixed position, when a line's word count varies).
+- **AXI conventions** — every `bin/*` wrapper follows [AXI](https://axi.md/): an identity header
+  (`sms_identity "one-line description"` as the first thing printed), TOON for list-shaped data
+  (`... | sms_toon <name> <fields>`), structured `help[N]:` hints alongside the prose verdict (`sms_help
+  "do this" "or this"`), and meaningful exit codes (`0` diagnosis ran even if it found a problem, `1` the
+  tool itself failed to gather any data, `2` usage error).
 
 ## 5. Tool-call reliability
 - **Fewer tools is the biggest lever.** Small-model tool-calling accuracy collapses as the tool/schema

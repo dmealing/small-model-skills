@@ -6,6 +6,22 @@
 #   seeds ~/.config/small-model-skills/config from config.example (if absent)
 #   checks dependencies
 set -euo pipefail
+
+# Bare (non-WSL2) Windows has no supported backend — point at WSL2 instead of failing deep
+# inside some later script with a confusing missing-command error.
+case "${OSTYPE:-}" in
+  msys|cygwin|win32)
+    echo "small-model-skills doesn't support native Windows — it needs a POSIX shell + coreutils."
+    echo "Install WSL2 (https://learn.microsoft.com/windows/wsl/install), then run this installer"
+    echo "from inside your WSL2 Linux distro — it uses the same Linux backend as a native install."
+    exit 1
+    ;;
+esac
+case "$(uname -s 2>/dev/null)" in
+  Darwin) SMS_OS=macos ;;
+  *) SMS_OS=linux ;;  # includes WSL2 — same backend as native Linux
+esac
+
 SRC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/small-model-skills"
 BINDIR="${SMS_BINDIR:-$HOME/.local/bin}"
@@ -13,6 +29,7 @@ SKILLS="$HOME/.claude/skills"
 CFG="$HOME/.config/small-model-skills/config"
 
 echo "small-model-skills installer"
+echo "  OS     : $SMS_OS ($(uname -s 2>/dev/null))"
 echo "  source : $SRC"
 echo "  runtime: $DATA"
 echo "  bin    : $BINDIR   (must be on PATH)"
@@ -46,9 +63,15 @@ else
   echo "config exists ($CFG) — left as-is"
 fi
 
-# 5. dependency check
+# 5. dependency check (OS-aware — macOS uses native tools that replace ip/systemctl/etc.)
 echo "-- dependencies --"
-for c in ip dig ping snmpwalk curl jq systemctl journalctl df du ps free nproc; do
+common_deps="dig ping snmpwalk curl jq df du ps"
+if [ "$SMS_OS" = macos ]; then
+  os_deps="sysctl vm_stat route ifconfig launchctl log"
+else
+  os_deps="ip systemctl journalctl free nproc"
+fi
+for c in $common_deps $os_deps; do
   if command -v "$c" >/dev/null 2>&1; then printf '  ok   %s\n' "$c"; else printf '  MISS %s (some skills degrade without it)\n' "$c"; fi
 done
 case ":$PATH:" in *":$BINDIR:"*) : ;; *) echo "  WARNING: $BINDIR is not on PATH — add it to use the wrappers by name.";; esac

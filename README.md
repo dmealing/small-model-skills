@@ -43,12 +43,13 @@ browse and improvise will do more.
 
 ## Platform support
 
-Built and tested on **Linux** today. **macOS** (native) and **Windows** (via WSL2, not a native
-PowerShell port) support is in active design — see
+Tested on **Linux** and **macOS** (native — `sysctl`/`vm_stat`/`route`/`launchctl`/`log show`, no
+Linux tools required). **Windows** means **WSL2**, not a native PowerShell port — `install.sh` detects
+WSL2 and runs the Linux backend unmodified; on bare (non-WSL2) Windows it prints a message pointing at
+WSL2 setup instead of failing deep inside a wrapper. See
 [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md)
-and [`DESIGN.md`](DESIGN.md#platform-support--axi-conventions-in-design) for the plan. Not implemented yet;
-`install.sh` on macOS today will hit missing/incompatible commands in some wrappers (`system-triage`,
-`log-triage` in particular — they lean on `systemd`/`journald`, which macOS doesn't have).
+and [`DESIGN.md`](DESIGN.md#platform-support--axi-conventions) for the full design and the real
+portability bugs the macOS port surfaced along the way.
 
 ## What it's NOT (and honest limits)
 
@@ -135,16 +136,17 @@ For an **agent-purpose** engine, see [`models/agents-a1/`](models/agents-a1/) �
 active) is built for tool-loops; its GGUF needs a one-line template fix that `install-model.sh` applies.
 
 ### 2. Point Claude Code at it offline
-Ollama ≥ 0.14 speaks Anthropic's API natively, so no proxy is needed. Add a launcher to your shell rc:
+Ollama ≥ 0.14 speaks Anthropic's API natively, so no proxy is needed. `bin/claude-local` (installed onto
+your PATH by `install.sh`, step 3 below) does the env-var wiring for you:
 ```bash
-claude-local() {                       # run Claude Code against the local model
-  local model="${CLAUDE_LOCAL_MODEL:-qwen2.5-coder-cc}"
-  ANTHROPIC_BASE_URL="http://localhost:11434" ANTHROPIC_AUTH_TOKEN="ollama" ANTHROPIC_API_KEY="" \
-  ANTHROPIC_MODEL="$model" ANTHROPIC_SMALL_FAST_MODEL="$model" \
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 command claude "$@"
-}
+claude-local                # uses LOCAL_MODEL_DEFAULT from config (or agents-a1)
+claude-local qwable         # -> LOCAL_MODEL_QWABLE
+claude-local agents-a1      # -> LOCAL_MODEL_AGENTS_A1 (see models/agents-a1/)
+claude-local llama3.3:70b   # anything else is passed straight through as a raw Ollama tag —
+                             # no short alias for a 70B+ model on purpose; see config.example
 ```
-Your normal `claude` is untouched; `claude-local` uses the offline model.
+Your normal `claude` is untouched; `claude-local` uses the offline model. Model names/tags live in
+`~/.config/small-model-skills/config` (`LOCAL_MODEL_*`), not hardcoded in the script.
 
 ### 3. Install the skills
 ```bash
@@ -166,7 +168,28 @@ claude-local
 > prep this project for offline work
 ```
 The model loads the matching skill, runs the read-only wrapper, and explains the result — proposing any
-fix for you to run. (It runs with normal permission prompts; it won't change anything on its own.)
+fix for you to run. Every wrapper is read-only by design regardless of how you launch `claude`, but note
+the launcher itself is a local convenience script — check what flags your own `claude-local` invocation
+passes through before assuming permission prompts are on.
+
+### 6. (optional) Ambient system-health context at session start
+`claude-hooks/session-start-ambient-context.sh` runs `sys-diag` and surfaces the result as context the
+moment a `claude-local` session starts — so the model already has real load/memory facts before you ask
+anything, working around small models' unreliable skill auto-triggering. It's a no-op for normal (cloud)
+Claude Code sessions (checks `ANTHROPIC_BASE_URL` first), but touches your global
+`~/.claude/settings.json`, so `install.sh` does **not** wire it in automatically — add it yourself:
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "", "hooks": [{ "type": "command",
+        "command": "/absolute/path/to/small-model-skills/claude-hooks/session-start-ambient-context.sh",
+        "timeout": 10 }] }
+    ]
+  }
+}
+```
+(Merge into the existing `hooks.SessionStart` array — don't replace other entries.)
 
 ## Routers
 `network-triage` reads live WAN status over generic SNMP (any SNMP router — just set `WAN_PRIMARY`/
@@ -180,8 +203,8 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
   skills a small model can execute *(how-to + reference)*
 - [`DESIGN.md`](DESIGN.md) — architecture and why it's built this way *(explanation)*
 - [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md)
-  — planned macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions *(design, not yet
-  implemented)*
+  — macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions, implemented *(design +
+  as-built notes)*
 - [`models/README.md`](models/README.md) — getting a local model working with Claude Code, incl. the Ollama
   template gotcha *(reference)*
 - [`modules/router/interface.md`](modules/router/interface.md) — add a router/firewall vendor *(reference)*

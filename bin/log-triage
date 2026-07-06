@@ -1,35 +1,56 @@
 #!/usr/bin/env bash
-# log-triage — read-only systemd + journal triage ("what service is broken / what's erroring?").
-# Changes nothing.
+# log-triage — read-only service/log triage ("what service is broken / what's erroring?").
+# Linux: systemd + journald. macOS: launchd + unified log (log show). Changes nothing.
+# Exit: 0 diagnosis ran (even if it found a problem), 1 tool itself failed.
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-sms_head "log-triage"
+sms_identity "Read-only snapshot: failed services + recent error-level log lines"
 
-sms_sec "failed systemd units"
-failed=""
-if have systemctl; then
-  failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}')
-  if [ -n "$failed" ]; then echo "$failed" | sed 's/^/  FAILED: /'; else echo "  none — no failed units"; fi
-else echo "  (systemctl not available)"; fi
+sms_sec "failed services"
+failed="$(sms_failed_services)"
+if [ -n "$failed" ]; then
+  if [ "$SMS_OS" = macos ]; then
+    printf '%s\n' "$failed" | awk '{printf "%s,%s\n",$1,$2}' | sms_toon failed label,last_exit_status
+    echo "  (launchd has no exact 'failed unit' concept — these are jobs whose last exit status was non-zero, which can include expected one-shots)"
+  else
+    printf '%s\n' "$failed" | sms_toon failed unit
+  fi
+else
+  echo "  none — no failed units"
+fi
 
 nerr=0
 sms_sec "recent errors (priority err+, last 1h)"
-if have journalctl; then
-  journalctl -p err -S -1h --no-pager -q 2>/dev/null | tail -12 | sed 's/^/  /'
-  nerr=$(journalctl -p err -S -1h --no-pager -q 2>/dev/null | wc -l)
-  [ "$nerr" -eq 0 ] && echo "  (none in the last hour)"
-else echo "  (journalctl not available — may need sudo/adm group)"; fi
+errs="$(sms_recent_errors)"
+if [ -n "$errs" ]; then
+  printf '%s\n' "$errs" | tail -12 | sed 's/^/  /'
+  nerr=$(sms_recent_errors_count)
+else
+  echo "  (none in the last hour, or logs unavailable — may need elevated permissions)"
+fi
 
-sms_sec "top error sources this boot"
-have journalctl && journalctl -b -p err --no-pager -q 2>/dev/null \
-  | awk '{print $5}' | sed 's/\[[0-9]*\]:\?$//; s/:$//' | grep -v '^$' | sort | uniq -c | sort -rn | head -6 | sed 's/^/  /'
+sms_sec "top error sources this boot/hour"
+if [ -n "$errs" ]; then
+  sms_error_sources_this_boot | head -6 | awk '{cnt=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",cnt,$0}' | sms_toon sources count,source
+else
+  echo "  sources[0]{count,source}:"
+  echo "  (none in the last hour, or logs unavailable — may need elevated permissions; see 'recent errors' above)"
+fi
 
 sms_sec "verdict"
 if [ -n "$failed" ]; then
-  echo "  FAILED units present -> inspect: systemctl status <unit>   and   journalctl -u <unit> -b --no-pager"
-elif [ "${nerr:-0}" -gt 0 ]; then
-  echo "  No failed units, but ${nerr} error line(s) in the last hour -> drill into the top source above with journalctl -u <name>."
+  if [ "$SMS_OS" = macos ]; then
+    echo "  Non-zero-exit launchd jobs present -> inspect: launchctl list <label>   and   log show --predicate 'subsystem == \"<label>\"' --last 1h"
+    sms_help "Run 'launchctl list <label>' on the entries above, and 'log show --last 1h --predicate '\''subsystem == \"<label>\"'\''' to see why"
+  else
+    echo "  FAILED units present -> inspect: systemctl status <unit>   and   journalctl -u <unit> -b --no-pager"
+    sms_help "Run 'systemctl status <unit>' on the entries above, and 'journalctl -u <unit> -b --no-pager' for detail"
+  fi
+elif [ "${nerr:-0}" -gt 0 ] 2>/dev/null; then
+  echo "  No failed units, but ${nerr} error line(s) in the last hour -> drill into the top source above."
+  sms_help "Investigate the top source above with 'journalctl -u <name>' (Linux) or 'log show --predicate \"process == \\\"<name>\\\"\"' (macOS)"
 else
   echo "  Clean: no failed units and no errors in the last hour."
 fi
+exit 0

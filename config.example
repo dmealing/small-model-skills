@@ -22,3 +22,9 @@ ROUTER_API_PORT=443         # vendor REST/mgmt port (SonicWall is often 443 or 8
 SNMP_COMMUNITY=public       # SNMP v2c read community
 ROUTER_CRED_ITEM=           # password-manager item for router admin creds (ONLINE only), e.g. op-get item name
 # ROUTER_CRED_FILE=~/.config/small-model-skills/router.cred   # optional cached "user=.../pass=..." (chmod 600) for OFFLINE REST
+
+# --- Local models (Ollama; used by the `claude-local` launcher) ---
+LOCAL_MODEL_DEFAULT=agents-a1                        # alias used when claude-local is run with no arg
+LOCAL_MODEL_QWABLE=hf.co/Mia-AiLab/Qwable-3.6-27b    # `claude-local qwable`
+LOCAL_MODEL_AGENTS_A1=agents-a1                      # `claude-local agents-a1` (see models/agents-a1/)
+# No entry/alias for a 70B here on purpose — see bin/claude-local's header comment.

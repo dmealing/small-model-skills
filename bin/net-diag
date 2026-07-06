@@ -1,28 +1,37 @@
 #!/usr/bin/env bash
 # net-diag — read-only local + LAN + DNS + internet triage. Config-driven; changes nothing.
+# Exit: 0 diagnosis ran (even if it found a problem), 1 tool itself failed.
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-sms_head "net-diag"
+sms_identity "Read-only snapshot: local link/DNS/internet reachability"
+
+links="$(sms_local_links | sort -k2,2r | head -8 | awk '{printf "%s,%s\n",$1,$2}')"
+if [ -z "$links" ] && [ -z "$(sms_host_addr)" ]; then
+  echo "verdict: FAILED — could not enumerate any network interface on this system"
+  sms_help "Check that this OS is supported (SMS_OS=$SMS_OS) and that ip/ifconfig are available"
+  exit 1
+fi
+
 sms_sec "local link"
-ip -br link 2>/dev/null | awk '$1!="lo"{printf "  %-14s %-6s %s\n",$1,$2,$3}' | head -8
+printf '%s\n' "$links" | sms_toon links iface,state
 
 sms_sec "addressing"
-sms_line "host address" "$(ip -4 -br addr 2>/dev/null | awk '$1!="lo" && $3!=""{print $1" "$3; exit}')"
-sms_line "default route" "$(ip route show default 2>/dev/null | head -1)"
+sms_line "host address" "$(sms_host_addr)"
+sms_line "default gateway" "${GATEWAY_IP:-<unknown>}"
 
 sms_sec "reachability"
-if [ -n "$GATEWAY_IP" ] && ping -c2 -W1 "$GATEWAY_IP" >/dev/null 2>&1; then GWS=reachable; else GWS=UNREACHABLE; fi
+if [ -n "$GATEWAY_IP" ] && sms_ping "$GATEWAY_IP"; then GWS=reachable; else GWS=UNREACHABLE; fi
 sms_line "gateway ${GATEWAY_IP:-<unknown>}" "$GWS"
 NET=FAIL
-for t in "$DNS_PUBLIC" "$DNS_PUBLIC2"; do [ -n "$t" ] && ping -c1 -W1 "$t" >/dev/null 2>&1 && { NET=PASS; break; }; done
+for t in "$DNS_PUBLIC" "$DNS_PUBLIC2"; do [ -n "$t" ] && sms_ping "$t" && { NET=PASS; break; }; done
 sms_line "internet (raw IP)" "$NET   (ping $DNS_PUBLIC, bypasses DNS)"
 
 sms_sec "dns"
 DNS_L=skip
-if [ -n "$DNS_LOCAL" ]; then DNS_L=FAIL; dig +short +time=1 +tries=1 cloudflare.com @"$DNS_LOCAL" 2>/dev/null | grep -qE '[0-9]' && DNS_L=PASS; fi
-DNS_P=FAIL; dig +short +time=1 +tries=1 cloudflare.com @"$DNS_PUBLIC" 2>/dev/null | grep -qE '[0-9]' && DNS_P=PASS
-DNS_S=FAIL; getent hosts cloudflare.com >/dev/null 2>&1 && DNS_S=PASS
+if [ -n "$DNS_LOCAL" ]; then DNS_L=FAIL; have dig && dig +short +time=1 +tries=1 cloudflare.com @"$DNS_LOCAL" 2>/dev/null | grep -qE '[0-9]' && DNS_L=PASS; fi
+DNS_P=FAIL; have dig && dig +short +time=1 +tries=1 cloudflare.com @"$DNS_PUBLIC" 2>/dev/null | grep -qE '[0-9]' && DNS_P=PASS
+DNS_S=FAIL; sms_resolve_system cloudflare.com && DNS_S=PASS
 [ "$DNS_L" != skip ] && sms_line "via local DNS $DNS_LOCAL" "$DNS_L"
 sms_line "via public $DNS_PUBLIC" "$DNS_P"
 sms_line "via system resolver" "$DNS_S"
@@ -30,12 +39,22 @@ sms_line "via system resolver" "$DNS_S"
 sms_sec "verdict"
 if [ "$GWS" != reachable ]; then
   echo "  LAN/LOCAL: gateway unreachable -> check cable/Wi-Fi/switch. Not an ISP problem."
+  sms_help "Check the physical/Wi-Fi connection, then re-run net-diag"
 elif [ "$NET" = FAIL ]; then
   echo "  ISP/WAN: gateway OK but no internet -> likely an ISP/WAN outage or failover. Next: run 'router-status'."
+  sms_help "Run 'router-status' for WAN/failover detail"
 elif [ "$DNS_L" = FAIL ] && [ "$DNS_P" = PASS ]; then
   echo "  DNS: internet is up but local DNS ($DNS_LOCAL) is not resolving -> check your local DNS server."
+  sms_help "Check the local DNS server ($DNS_LOCAL) is running and reachable"
 elif [ "$DNS_S" = FAIL ]; then
-  echo "  DNS: resolvers reachable but system resolution failing -> check /etc/resolv.conf / systemd-resolved."
+  if [ "$SMS_OS" = macos ]; then
+    echo "  DNS: resolvers reachable but system resolution failing -> check System Settings > Network > DNS, or 'sudo dscacheutil -flushcache'."
+    sms_help "Check System Settings > Network > DNS servers, then 'sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'"
+  else
+    echo "  DNS: resolvers reachable but system resolution failing -> check /etc/resolv.conf / systemd-resolved."
+    sms_help "Check /etc/resolv.conf and 'systemctl status systemd-resolved'"
+  fi
 else
   echo "  HEALTHY: local link, gateway, internet, and DNS all OK."
 fi
+exit 0

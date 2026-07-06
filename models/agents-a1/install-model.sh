@@ -12,7 +12,7 @@ GGUF_REPO="${GGUF_REPO:-InternScience/Agents-A1-Q4_K_M-GGUF}"
 GGUF_NAME="${GGUF_NAME:-Agents-A1-Q4_K_M.gguf}"
 BASE_REPO="${BASE_REPO:-InternScience/Agents-A1}"     # source of the chat template
 MODEL_NAME="${MODEL_NAME:-agents-a1}"
-CTX="${CTX:-32768}"
+CTX="${CTX:-262144}"  # match the model's native max (Claude Code's system prompt + tool defs alone can exceed 32K)
 WORK="${WORK:-$PWD}"
 cd "$WORK"
 
@@ -26,11 +26,11 @@ echo "[1/4] download official GGUF ($GGUF_NAME) ..."
 echo "[2/4] fetch the model's own template + strip the two breaking guards ..."
 hf download "$BASE_REPO" chat_template.jinja --local-dir . >/dev/null 2>&1 \
   || curl -fsSL "https://huggingface.co/$BASE_REPO/raw/main/chat_template.jinja" -o chat_template.jinja
-sed -i "/System message must be at the beginning/d; /No user query found in messages/d" chat_template.jinja
+sed "/System message must be at the beginning/d; /No user query found in messages/d" chat_template.jinja > chat_template.jinja.tmp && mv chat_template.jinja.tmp chat_template.jinja
 
 echo "[3/4] write a patched GGUF carrying the fixed template ..."
 FIXED="${GGUF_NAME%.gguf}-fixed.gguf"
-python3 -m gguf.scripts.gguf_new_metadata --chat-template "$(cat chat_template.jinja)" "$GGUF_NAME" "$FIXED"
+python3 -m gguf.scripts.gguf_new_metadata --force --chat-template "$(cat chat_template.jinja)" "$GGUF_NAME" "$FIXED"
 
 echo "[4/4] import into Ollama as '$MODEL_NAME' ..."
 cat > Modelfile <<EOF
