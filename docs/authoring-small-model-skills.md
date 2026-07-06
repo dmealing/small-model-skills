@@ -27,6 +27,9 @@ best at the very start/end of context and degrades in the middle, worse for weak
   (it's a classifier the model uses to pick the skill, injected at startup). Put the *trigger* first.
   Aim ≤ ~350 chars — the listing truncates and, under budget pressure, least-used skills are dropped.
 - Read-only skills need nothing else. Any skill with side effects: see [§6](#6-safety).
+- `x-wrappers` (optional): the wrapper command(s) this skill drives, as a list — `x-wrappers: [sys-diag]`
+  (or several: `[net-diag, router-status]`). The `smols` catalog reads it to show *how to invoke* the
+  skill; omit it and the wrapper still installs but the catalog can't tie it to the skill.
 
 ## 2. Length & structure
 - **Body < 500 lines (hard). Aim < ~120 for a weak-model skill.** Front-load the load-bearing steps

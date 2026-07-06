@@ -12,7 +12,8 @@ facts). It's short, and those rules are what keep a skill from quietly failing o
 ## Adding a skill
 
 1. **`skills/<name>/SKILL.md`** — the runbook. Third-person `description` stating *what* and *when*; a flat,
-   numbered set of imperative steps (no nested if/else); point at the wrapper, not raw commands.
+   numbered set of imperative steps (no nested if/else); point at the wrapper, not raw commands. Add
+   `x-wrappers: [<wrapper>]` to the frontmatter so `smols` lists how to invoke it.
 2. **`bin/<wrapper>`** — a deterministic script that does the work and prints a short digest ending in a
    verdict. Read-only. Read any host-specific value from `~/.config/small-model-skills/config` via
    `bin/lib/common.sh`; never hardcode IPs/paths/hostnames.
