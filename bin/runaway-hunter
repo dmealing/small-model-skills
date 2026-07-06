@@ -16,7 +16,7 @@ sms_line "thresholds" "cpu > ${RUNAWAY_CPU_PCT}%  AND  age > ${RUNAWAY_AGE_HOURS
 sms_sec "runaway candidates (high CPU AND aged)"
 runaway="$(printf '%s\n' "$rows" | awk -v c="$RUNAWAY_CPU_PCT" -v a="$age_limit" '$3+0>c && $2+0>a')"
 if [ -n "$runaway" ]; then
-  printf '%s\n' "$runaway" | awk '{h=int($2/3600); printf "%s,%s,%.0f%%,%.0f%%,%s,%sh\n",$1,$6,$3,$4,$5,h}' \
+  printf '%s\n' "$runaway" | awk '{comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i; h=int($2/3600); printf "%s,%s,%.0f%%,%.0f%%,%s,%sh\n",$1,comm,$3,$4,$5,h}' \
     | sms_toon runaway pid,comm,cpu,mem,stat,age
 else
   echo "  (none — no process is both hot and long-running)"
@@ -24,14 +24,14 @@ fi
 
 sms_sec "zombie / wedged (Z = defunct, D/U = uninterruptible)"
 # state is the first char of stat: Z zombie; D (Linux) / U (macOS) uninterruptible
-wedged="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1)} s=="Z"||s=="D"||s=="U" {printf "%s,%s,%s\n",$1,$6,$5}')"
+wedged="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1); comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} s=="Z"||s=="D"||s=="U" {printf "%s,%s,%s\n",$1,comm,$5}')"
 if [ -n "$wedged" ]; then printf '%s\n' "$wedged" | sms_toon wedged pid,comm,stat; else echo "  (none)"; fi
 
 offenders=""
 if [ -n "$RUNAWAY_OFFENDERS" ]; then
   sms_sec "known offenders (from RUNAWAY_OFFENDERS)"
   pat="$(printf '%s' "$RUNAWAY_OFFENDERS" | tr ' ' '|')"
-  offenders="$(printf '%s\n' "$rows" | awk -v p="$pat" '$6 ~ p {h=int($2/3600); printf "%s,%s,%.0f%%,%sh\n",$1,$6,$3,h}')"
+  offenders="$(printf '%s\n' "$rows" | awk -v p="$pat" '{comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} comm ~ p {h=int($2/3600); printf "%s,%s,%.0f%%,%sh\n",$1,comm,$3,h}')"
   if [ -n "$offenders" ]; then printf '%s\n' "$offenders" | sms_toon offenders pid,comm,cpu,age; else echo "  (none running)"; fi
 fi
 
