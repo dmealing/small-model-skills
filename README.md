@@ -7,9 +7,9 @@
 can't (or won't) run a frontier or 70B model.** Diagnostics and offline-dev help for a Linux
 workstation, driven by a ~7–30B model on a consumer GPU or CPU, fully offline.
 
-![small-model-skills — a local model reading a SonicWall's WAN/failover status over SNMP+REST, fully offline](media/demo.gif)
+![small-model-skills — a small local model, offline, checking the firewall's WAN/failover then diagnosing why the box is slow](media/demo.gif)
 
-<sub>Real capture: a small local model (`qwen3-coder-cc`), fully offline, ran the read-only `router-status` skill — which reads your SonicWall's WAN links over SNMP + REST — and reported the failover state (primary ISP up and carrying traffic, backup idle). The interface table + verdict are that wrapper's verbatim output; the closing line is the model's own verbatim verdict. Rendered with `python3 media/build-demo.py` (Pillow, no screen recording).</sub>
+<sub>Real capture, one offline session: a small local model (`qwen3-coder-cc`) answers two questions — first reading the SonicWall's WAN links + failover over SNMP + REST (`router-status`), then finding why the box is slow (`sys-diag`). The wrapper tables/verdicts and the model's replies are all verbatim. Rendered with `python3 media/build-demo.py` (Pillow, no screen recording).</sub>
 
 ## Why this exists
 
