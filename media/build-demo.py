@@ -99,8 +99,8 @@ A2 = [
     [("     usage of this llama-server process if it's not actively needed.", TXT)],
 ]
 
-ask(Q1, A1, read_hold=54)   # ~4.5s to read the firewall output
-ask(Q2, A2, read_hold=72)   # ~6s to read + hold at the end
+ask(Q1, A1, read_hold=60)    # ~5s to read the firewall output
+ask(Q2, A2, read_hold=120)   # ~10s hold at the end before the loop restarts
 
 FPS = 12
 gif = os.path.join(HERE, "demo.gif")
