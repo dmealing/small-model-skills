@@ -83,12 +83,14 @@ LICENSE              MIT
 
 - Wrappers are read-only. Anything that could change state is **not** in a wrapper — it's text in the
   skill for the human to run.
-- Skills carry no `--dangerously-skip-permissions` in their own definitions or `SKILL.md`s — the
-  read-only-by-design boundary lives in what the wrappers *do*, not in a launcher flag. In practice the
-  owner's own `claude-local`/`claude-qwable`/`claude-agents-a1` launchers run with
-  `--dangerously-skip-permissions` (a deliberate, explicit choice, revisited when this was built — not an
-  oversight): the wrappers themselves stay read-only regardless, so the actual attack surface is unchanged;
-  what's traded away is the human-approval gate on the model's *other* tool calls in that session.
+- `bin/claude-local` (and the `claude-qwable`/`claude-agents-a1` aliases built on it) run with **normal
+  permission handling** — no `--dangerously-skip-permissions`. This was briefly the opposite (skip
+  enabled, for local-model convenience) before being deliberately reverted: a weaker local model is
+  *more* likely to misfire a tool call than a frontier one, not less, so the human-approval gate matters
+  more here, not less. Bypass mode also silently ignores the standard Claude Code `deny` rules (e.g. a
+  global block on `git push --force`/`git reset --hard`) — normal mode restores that protection. Your
+  existing `~/.claude/settings.json` `allow`/`deny`/`ask` rules apply as-is, so a broad existing `allow`
+  for routine tools still avoids prompt-spam for ordinary work.
 - Cherry-picked community content (linux-troubleshooting, disk-cleaner analyzer, journalctl forensics)
   is **safety-edited**: destructive commands stripped or moved to human-run suggestions; attribution kept.
 - Secrets never enter the repo. Credentials come from the user's password manager or a local

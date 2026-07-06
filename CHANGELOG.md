@@ -33,6 +33,12 @@ All notable changes to this project are documented here. The format is based on
   `sys-diag` digest as ambient context for local-model sessions only (checks `ANTHROPIC_BASE_URL`; a
   no-op for normal cloud sessions). The AXI session-hook follow-on from the original cross-platform spec.
 
+### Changed
+- `bin/claude-local` no longer runs with `--dangerously-skip-permissions` — normal Claude Code
+  permission prompts apply. Bypass mode was silently ignoring the standard `deny` rules (e.g. blocking
+  `git push --force`/`git reset --hard`), and a weaker local model is more likely to misfire a tool call
+  than a frontier one, not less.
+
 ### Fixed
 - `bin/lib/os-macos.sh`: `vm_stat` field-position bug (indexing from a fixed column broke once a
   label had more/fewer words than assumed — fixed by indexing from `$(NF-1)`).

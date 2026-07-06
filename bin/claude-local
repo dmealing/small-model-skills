@@ -7,6 +7,12 @@
 # Intentionally has no short alias for llama3.3:70b — a 70B local load is a real resource risk;
 # require the full `ollama pull`ed tag explicitly (e.g. `claude-local llama3.3:70b`) rather than a
 # one-keystroke shortcut.
+# Runs with NORMAL permission handling (no --dangerously-skip-permissions) — this project's own
+# safety model is read-only-by-default/human-approves-mutations, and a weaker local model is more
+# likely to misfire a tool call than a frontier one. Your existing ~/.claude/settings.json
+# allow/deny/ask rules apply as-is (e.g. a global allow for Bash/Edit/Write still avoids prompting
+# for routine work; a global deny for destructive git ops still actually blocks them here, which
+# --dangerously-skip-permissions would otherwise have silently ignored).
 set -euo pipefail
 
 SMS_CONFIG="${SMS_CONFIG:-$HOME/.config/small-model-skills/config}"
@@ -39,4 +45,4 @@ exec env \
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-  claude --dangerously-skip-permissions --model "$model" "$@"
+  claude --model "$model" "$@"
