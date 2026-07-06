@@ -21,6 +21,12 @@ internet-less model into a useful **diagnostics + offline-dev assistant** for a 
 5. **Config-driven for portability.** No host-specific values are hardcoded. Every script reads
    `~/.config/small-model-skills/config` (user-supplied). This is what makes the library shareable *and*
    personal at once — your machine's values live in your config, never in the repo.
+6. **Agent-ergonomic output (in design).** Every consumer of `bin/` output is an agent reading stdout,
+   not a human at a terminal — so wrapper output is moving to
+   [AXI](https://axi.md/) (Agent eXperience Interface) conventions: TOON for list-shaped data (e.g. the
+   top-process table in `sys-diag`), an identity header, structured `help[]` next-step hints alongside
+   the existing plain-English verdict, and meaningful exit codes. Credit to axi.md for the conventions;
+   see [Platform support & AXI conventions](#platform-support--axi-conventions-in-design) below.
 
 ## Architecture
 
@@ -92,8 +98,42 @@ LICENSE              MIT
 3. `./install.sh` — copies skills, links wrappers, and walks you through creating your config.
 4. Ask the offline model to "diagnose the network / why it's slow / prep for offline dev."
 
+## Platform support & AXI conventions (in design)
+
+Built and tested on Linux today; every `bin/` wrapper currently calls Linux-only primitives directly
+(`nproc`, `/proc/loadavg`, `free`, GNU-flavored `ps`/`df`/`du` flags, `systemctl`/`journalctl`,
+`iproute2`). Full design: [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md).
+
+**Cross-platform.** OS-specific primitives move behind shared function names (`sms_nproc`,
+`sms_meminfo`, `sms_top_procs_cpu`, `sms_failed_services`, …) with one implementation file per OS —
+`bin/lib/os-linux.sh` (today's behavior, unchanged) and a new `bin/lib/os-macos.sh`
+(`sysctl`/`vm_stat`/`launchd`/`log show`). `bin/lib/common.sh` detects the OS once and sources the
+right file. Wrapper logic, digest structure, and every `skills/*/SKILL.md` file are untouched — the
+OS split stays entirely below the model-facing layer. Windows support means **WSL2**, not a native
+PowerShell port: this project has no Windows box to test/maintain a from-scratch rewrite against, and
+WSL2 runs `os-linux.sh` unmodified — `install.sh` treats a detected WSL2 environment as Linux.
+
+**AXI conventions.** Since every `bin/` wrapper is an agent-facing CLI (invoked by a local model
+through Claude Code, never by a human directly), output is adopting
+**[AXI — Agent eXperience Interface](https://axi.md/)** conventions where they fit a read-only
+diagnostic snapshot:
+- an identity header (`bin: ~/.local/bin/sys-diag` + one-line description)
+- TOON for genuinely list-shaped data (process tables, failed-unit lists)
+- structured `help[]` next-step hints alongside the existing plain-English verdict sentence
+- meaningful exit codes (`0` = diagnosis completed, even if it found a problem; `1` = the tool itself
+  failed; `2` = usage error)
+
+Not adopted: AXI's mutation/idempotency and pagination/aggregate-count conventions don't apply —
+these wrappers are read-only single-shot snapshots, not stateful list/mutate resources. AXI's
+session-hook ambient-context feature (surfacing e.g. network/disk health at session start via a
+Claude Code/Codex/OpenCode `SessionStart` hook) is a well-matched idea for this project's own noted
+weakness (small models don't reliably auto-trigger skills from a vague prompt) but is scoped as a
+**separate follow-on design**, since it touches hooks/settings.json rather than `bin/`.
+
 ## Roadmap
 
 - v1: the catalog above, SonicWall router module, Doug's machine as first consumer.
+- In design: cross-platform (macOS native + Windows via WSL2) and AXI output conventions — see above.
 - Later: publish public repo + docs; add router modules (OPNsense/pfSense/UniFi); add `grammar/` GBNF
-  files to constrain tool-call JSON for the weakest models; optional `system-review` deep-dive port.
+  files to constrain tool-call JSON for the weakest models; optional `system-review` deep-dive port;
+  possible follow-on: AXI session-hook ambient context.

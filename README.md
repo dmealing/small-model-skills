@@ -41,6 +41,15 @@ own the *how*, your local facts baked into config, read-only safety — it just 
 **without a network**. If you have a capable model *and* an internet connection, a general agent that can
 browse and improvise will do more.
 
+## Platform support
+
+Built and tested on **Linux** today. **macOS** (native) and **Windows** (via WSL2, not a native
+PowerShell port) support is in active design — see
+[`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md)
+and [`DESIGN.md`](DESIGN.md#platform-support--axi-conventions-in-design) for the plan. Not implemented yet;
+`install.sh` on macOS today will hit missing/incompatible commands in some wrappers (`system-triage`,
+`log-triage` in particular — they lean on `systemd`/`journald`, which macOS doesn't have).
+
 ## What it's NOT (and honest limits)
 
 - **Not a substitute for a general agent framework — when you have a capable model _and_ a network.** Then
@@ -170,6 +179,9 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
 - [`docs/authoring-small-model-skills.md`](docs/authoring-small-model-skills.md) — the standard for writing
   skills a small model can execute *(how-to + reference)*
 - [`DESIGN.md`](DESIGN.md) — architecture and why it's built this way *(explanation)*
+- [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md)
+  — planned macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions *(design, not yet
+  implemented)*
 - [`models/README.md`](models/README.md) — getting a local model working with Claude Code, incl. the Ollama
   template gotcha *(reference)*
 - [`modules/router/interface.md`](modules/router/interface.md) — add a router/firewall vendor *(reference)*
@@ -183,6 +195,11 @@ Read [`docs/authoring-small-model-skills.md`](docs/authoring-small-model-skills.
 writing skills a small model can actually execute (flat steps, read-only, scripts-do-the-work, tiny
 context). Then see [`CONTRIBUTING.md`](CONTRIBUTING.md). Every new skill must be tested **on the actual
 small model**, not just a frontier one.
+
+## Acknowledgments
+Output-format conventions for `bin/` wrappers (identity header, TOON, structured help hints, exit
+codes) are being adopted from **[AXI — Agent eXperience Interface](https://axi.md/)**, credit to its
+authors for the standard.
 
 ## License
 MIT — see `LICENSE`.
