@@ -26,6 +26,7 @@ case "$pc" in
   *) sms_line "prev shutdown" "unknown (can't determine on this system)" ;;
 esac
 rr="$(sms_reset_reason)"; [ -n "$rr" ] && sms_line "reset reason" "$rr"
+panic=0; case "$rr" in *"panic report"*) panic=1 ;; esac
 
 if [ "$pc" != 0 ]; then
   ktail="$(sms_prev_boot_kernel_tail 30 | tail -12)"
@@ -65,6 +66,9 @@ if [ "$pc" = 1 ]; then
 elif [ "$pc" = 0 ]; then
   echo "  No freeze on record — the last shutdown was clean."
   sms_help "Good moment to confirm the watchdog line above shows armed=yes (something is actually petting it)"
+elif [ "${panic:-0}" = 1 ]; then
+  echo "  PANIC REPORT FOUND — the last shutdown was NOT clean; a kernel panic is on record (the panic report + kernel tail above are the definitive evidence)."
+  sms_help "Match the panic report / kernel tail above to a known signature; the reset-reason line points at the exact .panic file to open"
 elif [ "${nboots:-0}" -le 1 ]; then
   echo "  LIMITED HISTORY — only the current boot is in the journal, so the previous session can't be reconstructed here."
   sms_help "Enable a persistent journal and/or a netconsole black-box (FREEZE_REMOTE_LOG_CMD) to capture the next freeze; the watchdog + cmdline mitigations above still show whether you're protected right now"
