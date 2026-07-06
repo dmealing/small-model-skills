@@ -7,7 +7,7 @@ set -uo pipefail
 SKILLS_DIR="${SMS_SKILLS_DIR:-$HOME/.claude/skills}"
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
-if [ -t 1 ]; then B=$'\e[1m'; C=$'\e[36m'; G=$'\e[32m'; D=$'\e[2m'; R=$'\e[0m'; else B= C= G= D= R=; fi
+if [ -t 1 ]; then B=$'\e[1m'; C=$'\e[36m'; G=$'\e[32m'; D=$'\e[2m'; R=$'\e[0m'; else B='' C='' G='' D='' R=''; fi
 
 # fm <file> <key> — value of a single-line frontmatter key from the first --- block
 fm(){ awk -v k="$2" '
