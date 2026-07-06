@@ -85,8 +85,8 @@ LICENSE              MIT
   skill for the human to run.
 - Skills carry no `--dangerously-skip-permissions` in their own definitions or `SKILL.md`s — the
   read-only-by-design boundary lives in what the wrappers *do*, not in a launcher flag. The
-  `claude-local`/`claude-qwable`/`claude-agents-a1` launchers likewise do **not** skip permissions: they
-  keep Claude Code's normal permission prompts, consistent with the propose-don't-apply model and
+  `claude-local` launcher (in all its `qwable`/`agents-a1`/raw-tag forms) likewise does **not** skip
+  permissions: it keeps Claude Code's normal permission prompts, consistent with the propose-don't-apply model and
   `SECURITY.md`. The human-approval gate on the model's tool calls stays in place, and the wrappers stay
   read-only regardless.
 - Cherry-picked community content (linux-troubleshooting, disk-cleaner analyzer, journalctl forensics)
