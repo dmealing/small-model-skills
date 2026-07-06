@@ -28,9 +28,9 @@ wedged="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1); comm=$6; for(i=7;i<=NF
 if [ -n "$wedged" ]; then printf '%s\n' "$wedged" | sms_toon wedged pid,comm,stat; else echo "  (none)"; fi
 
 offenders=""
-if [ -n "$RUNAWAY_OFFENDERS" ]; then
+pat="$(printf '%s' "$RUNAWAY_OFFENDERS" | xargs | tr ' ' '|')"
+if [ -n "$pat" ]; then
   sms_sec "known offenders (from RUNAWAY_OFFENDERS)"
-  pat="$(printf '%s' "$RUNAWAY_OFFENDERS" | tr ' ' '|')"
   offenders="$(printf '%s\n' "$rows" | awk -v p="$pat" '{comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} comm ~ p {h=int($2/3600); printf "%s,%s,%.0f%%,%sh\n",$1,comm,$3,h}')"
   if [ -n "$offenders" ]; then printf '%s\n' "$offenders" | sms_toon offenders pid,comm,cpu,age; else echo "  (none running)"; fi
 fi

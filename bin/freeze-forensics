@@ -27,9 +27,12 @@ case "$pc" in
 esac
 rr="$(sms_reset_reason)"; [ -n "$rr" ] && sms_line "reset reason" "$rr"
 
-if [ "$pc" = 1 ]; then
-  sms_sec "previous boot — last kernel lines (look for the freeze signature)"
-  sms_prev_boot_kernel_tail 30 | tail -12 | sed 's/^/  /'
+if [ "$pc" != 0 ]; then
+  ktail="$(sms_prev_boot_kernel_tail 30 | tail -12)"
+  if [ -n "$ktail" ]; then
+    sms_sec "previous boot — last kernel lines / panic report (look for the freeze signature)"
+    printf '%s\n' "$ktail" | sed 's/^/  /'
+  fi
 fi
 
 sms_sec "hardware errors"
