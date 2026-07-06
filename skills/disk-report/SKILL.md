@@ -1,6 +1,7 @@
 ---
 name: disk-report
 description: Diagnose why a disk or filesystem is full and find what is using the space. Use when a disk is full or nearly full, a "no space left" error appears, or when asked what is using disk space. Read-only — it analyzes and proposes cleanup for a human to run; it never deletes anything.
+x-wrappers: [disk-report]
 ---
 
 # Disk report (what is using the disk?)

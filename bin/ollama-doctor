@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# ollama-doctor — read-only health check of the local Ollama stack (the offline "brain"):
+# daemon up? which models installed? what's loaded? does it fit VRAM or spill to CPU (slow)?
+# Changes nothing. Exit: 0 ran (even if it found a problem), 1 daemon unreachable / no curl.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_identity "Read-only: local Ollama daemon, installed models, what's loaded, and VRAM fit"
+
+have curl || { echo "verdict: FAILED — 'curl' not installed (needed to query the Ollama API)"; exit 1; }
+API="${OLLAMA_URL%/}"
+
+ver="$(curl -fsS --max-time 3 "$API/api/version" 2>/dev/null)"
+if [ -z "$ver" ]; then
+  echo "verdict: DAEMON DOWN — no response from Ollama at $API"
+  sms_help "Start it: 'ollama serve' (or 'systemctl start ollama'), then re-run ollama-doctor" \
+           "If Ollama runs on another host/port, set OLLAMA_URL in your config"
+  exit 1
+fi
+if ! have jq; then
+  sms_sec "daemon"; sms_line "endpoint" "$API"; echo "  $ver"
+  echo "verdict: LIMITED — daemon is UP, but install 'jq' for model / VRAM detail"; sms_help "Install jq, then re-run"; exit 0
+fi
+
+sms_sec "daemon"
+sms_line "endpoint" "$API"
+sms_line "version" "$(printf '%s' "$ver" | jq -r '.version // "?"')"
+
+sms_sec "gpu / vram"
+gpu="$(sms_gpu_name)"; vfree="$(sms_gpu_vram_free)"; vtot="$(sms_gpu_vram_total)"
+if [ -n "$vfree" ]; then
+  sms_line "gpu" "${gpu:-unknown}"; sms_line "vram free/total" "${vfree} / ${vtot} MiB"
+elif [ "$SMS_OS" = macos ]; then
+  sms_line "gpu" "${gpu:-Apple GPU} — unified memory (models share system RAM)"
+else
+  sms_line "gpu" "${gpu:-none detected} (no NVIDIA free-VRAM figure available)"
+fi
+
+sms_sec "installed models"
+tags="$(curl -fsS --max-time 5 "$API/api/tags" 2>/dev/null)"
+printf '%s' "$tags" | jq -r '.models[]? | [.name, .size] | @tsv' 2>/dev/null \
+  | awk -F'\t' '{printf "%s,%.1fG\n",$1,$2/1073741824}' | sms_toon models name,size
+nmodels="$(printf '%s' "$tags" | jq -r '.models | length' 2>/dev/null)"
+
+sms_sec "loaded now (GET /api/ps)"
+ps="$(curl -fsS --max-time 3 "$API/api/ps" 2>/dev/null)"
+loaded="$(printf '%s' "$ps" | jq -r '.models | length' 2>/dev/null)"
+spill=0
+if [ "${loaded:-0}" -gt 0 ]; then
+  printf '%s' "$ps" | jq -r '.models[] | [.name, .size, .size_vram, (.expires_at // "")] | @tsv' 2>/dev/null \
+    | awk -F'\t' '{ gib=$2/1073741824; pct=($2>0)?int($3*100/$2):0; e=$4; sub(/\..*/,"",e); sub(/.*T/,"",e);
+                    printf "%s,%.1fG,%d%%,%s\n",$1,gib,pct,e }' | sms_toon loaded name,size,in_gpu,expires
+  spill="$(printf '%s' "$ps" | jq -r '.models[] | [.size,.size_vram] | @tsv' 2>/dev/null | awk -F'\t' '$2<$1{c++} END{print c+0}')"
+else
+  echo "  (no model currently loaded — the next request will load one)"
+fi
+
+sms_sec "verdict"
+if [ "${nmodels:-0}" -eq 0 ]; then
+  echo "  NO MODELS — Ollama is up but nothing is pulled; you can't run a local model offline yet."
+  sms_help "Pull a tool-capable coder model WHILE ONLINE, e.g. 'ollama pull qwen2.5-coder:14b'"
+elif [ "${spill:-0}" -gt 0 ]; then
+  echo "  CPU SPILL — a loaded model doesn't fully fit in VRAM and is running partly on CPU (slow inference)."
+  sms_help "Use a smaller model or quant, lower num_ctx, or free VRAM — see the in_gpu% column above"
+else
+  msg="  HEALTHY — daemon up, ${nmodels:-?} model(s) available"; [ "${loaded:-0}" -gt 0 ] && msg="$msg, loaded model fits in GPU"
+  echo "$msg."
+  sms_help "Run 'claude-local' to point Claude Code at a local model with these skills offline"
+fi
+exit 0

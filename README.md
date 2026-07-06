@@ -73,6 +73,10 @@ portability bugs the macOS port surfaced along the way.
 | `system-triage` | why is my computer slow? (CPU / load / memory / top hogs / thermal) |
 | `disk-report` | why is my disk full? (biggest dirs/files, caches, docker, logs) |
 | `log-triage` | what service is broken / what's erroring? (failed units, recent errors) |
+| `ollama-doctor` | is my local model OK? daemon / models / loaded / **VRAM fit** or CPU-spill — the offline brain |
+| `freeze-forensics` | why did it freeze? last-boot crash trail + is the **watchdog actually armed** (Linux) |
+| `runaway-hunter` | what's pegged the CPU for hours? aged / zombie / runaway processes → propose the kill |
+| `docker-hygiene` | Docker eating disk? orphan volumes / images / build cache, compose-aware |
 
 **Offline-dev** (the plane case):
 | Skill | Does |
@@ -81,6 +85,19 @@ portability bugs the macOS port surfaced along the way.
 
 **For contributors:** `audit-small-model-skills` + `skill-audit` enforce the authoring standard
 (`docs/authoring-small-model-skills.md`) so new skills stay small-model-safe.
+
+## Finding what you can do (offline)
+
+A small model won't reliably pick the right skill from a vague prompt, and offline you can't look it up —
+so there's a catalog command that needs no model and no network:
+
+```bash
+smols            # every skill: what it does + how to invoke it
+smols <name>     # detail for one skill
+```
+
+Invoke a skill by naming it to the model (*"use system-triage"*) or just run its wrapper (`sys-diag`) —
+both always work. `smols` reads your installed skills, so anything you add shows up automatically.
 
 ## Quickstart (~2 min)
 

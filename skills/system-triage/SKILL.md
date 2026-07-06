@@ -1,6 +1,7 @@
 ---
 name: system-triage
 description: Diagnose why a Linux computer is slow or sluggish. Use when the machine feels slow, laggy, or unresponsive, when fans are loud, or when asked about high CPU, memory, load, or thermals. Read-only — it inspects and proposes; it changes nothing.
+x-wrappers: [sys-diag]
 ---
 
 # System triage (why is it slow?)

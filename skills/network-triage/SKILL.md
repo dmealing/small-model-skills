@@ -1,6 +1,7 @@
 ---
 name: network-triage
 description: Diagnose network and internet problems on this machine and its LAN. Use when the internet seems down, a site won't load, DNS is failing, connectivity is flaky, or when asked to check the network, WAN, or router/firewall. Works offline (LAN-only). Read-only — it diagnoses and proposes fixes for a human to run; it never changes configuration.
+x-wrappers: [net-diag, router-status]
 ---
 
 # Network triage

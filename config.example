@@ -28,3 +28,11 @@ LOCAL_MODEL_DEFAULT=agents-a1                        # alias used when claude-lo
 LOCAL_MODEL_QWABLE=hf.co/Mia-AiLab/Qwable-3.6-27b    # `claude-local qwable`
 LOCAL_MODEL_AGENTS_A1=agents-a1                      # `claude-local agents-a1` (see models/agents-a1/)
 # No entry/alias for a 70B here on purpose — see bin/claude-local's header comment.
+
+# --- Diagnostics tuning (ollama-doctor / runaway-hunter / freeze-forensics) ---
+OLLAMA_URL=http://localhost:11434   # ollama-doctor: local Ollama API base URL
+RUNAWAY_CPU_PCT=50                  # runaway-hunter: flag processes above this %CPU ...
+RUNAWAY_AGE_HOURS=4                 # ... AND running longer than this many hours
+RUNAWAY_OFFENDERS=                  # extra comm/name patterns to always flag, space-separated (e.g. "bun pop-upgrade")
+KNOWN_BAD_KERNELS=                  # freeze-forensics: kernel versions to warn about, space-separated (blank = none)
+FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log (host-specific; blank = off)

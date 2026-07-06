@@ -33,3 +33,27 @@ sms_df_fullest(){
 }
 sms_du_top1(){ du -x -h -d1 "$1" 2>/dev/null; }
 sms_du_summary(){ du -x -sh "$1" 2>/dev/null | cut -f1; }
+
+# --- diagnostics for ollama-doctor / freeze-forensics / runaway-hunter (Linux) ---
+sms_gpu_name(){ nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1; }
+sms_gpu_vram_free(){ nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -1; }   # MiB; empty if no NVIDIA
+sms_gpu_vram_total(){ nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1; }
+sms_boot_list(){ have journalctl && journalctl --list-boots --no-pager 2>/dev/null; }
+# exit 0 = previous boot logged a clean shutdown, 1 = looks abrupt (freeze/power-loss), 2 = can't tell
+sms_prev_boot_clean(){ have journalctl || return 2
+  local prev; prev="$(journalctl -b -1 --no-pager -q 2>/dev/null | tail -40)"
+  [ -z "$prev" ] && return 2   # no previous boot recorded in the journal -> unknown, NOT "abrupt"
+  printf '%s\n' "$prev" | grep -qiE 'systemd-shutdown|Reached target.*(Power-Off|Reboot|Halt)|Shutting down'; }
+sms_prev_boot_kernel_tail(){ have journalctl && journalctl -k -b -1 --no-pager -q 2>/dev/null | tail -n "${1:-40}"; }
+sms_reset_reason(){ have journalctl && journalctl -k -b 0 --no-pager -q 2>/dev/null | grep -iE 'reset reason' | tail -1; }
+sms_mce_summary(){
+  if have ras-mc-ctl; then ras-mc-ctl --summary 2>/dev/null
+  elif have journalctl; then journalctl -k -b -1 --no-pager -q 2>/dev/null | grep -iE 'machine check|hardware error|\bmce\b' | tail -5; fi; }
+sms_watchdog_status(){
+  local mods dev sd
+  mods="$(lsmod 2>/dev/null | awk '$1 ~ /wdt|_tco|watchdog/{print $1}' | paste -sd, -)"
+  dev="$(ls /dev/watchdog* 2>/dev/null | paste -sd, -)"
+  sd="$(systemctl show -p RuntimeWatchdogUSec --value 2>/dev/null)"
+  echo "modules=${mods:-none} device=${dev:-none} systemd_runtime=${sd:-0}"; }
+# emit: pid age_seconds cpu mem stat comm  (sorted by cpu desc)
+sms_procs_aged(){ ps -eo pid,etimes,pcpu,pmem,stat,comm --sort=-pcpu --no-headers 2>/dev/null; }
