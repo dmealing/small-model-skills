@@ -168,9 +168,10 @@ claude-local
 > prep this project for offline work
 ```
 The model loads the matching skill, runs the read-only wrapper, and explains the result — proposing any
-fix for you to run. Every wrapper is read-only by design regardless of how you launch `claude`, but note
-the launcher itself is a local convenience script — check what flags your own `claude-local` invocation
-passes through before assuming permission prompts are on.
+fix for you to run. Every wrapper is read-only by design regardless of how you launch `claude`, and
+`claude-local` keeps Claude Code's normal permission prompts (it does **not** pass
+`--dangerously-skip-permissions`), so the human-approval gate on the model's other tool calls stays in
+place — consistent with the propose-don't-apply model (see [`SECURITY.md`](SECURITY.md)).
 
 ### 6. (optional) Ambient system-health context at session start
 `claude-hooks/session-start-ambient-context.sh` runs `sys-diag` and surfaces the result as context the
