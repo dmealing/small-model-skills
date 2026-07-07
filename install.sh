@@ -57,6 +57,21 @@ else
   echo "(no skills/ to install yet)"
 fi
 
+# 3b. curated Claude Code config home for claude-local — exposes ONLY the small-model-skills, not every
+# user skill. A small model's tool selection degrades as the skill count grows, and each unused skill's
+# description is dead weight in an already-tight context. claude-local points CLAUDE_CONFIG_DIR here.
+CC_HOME="$(dirname "$CFG")/cc-home"
+if compgen -G "$SRC/skills/*/" >/dev/null; then
+  mkdir -p "$CC_HOME/skills"
+  rm -f "$CC_HOME"/skills/* 2>/dev/null || true
+  # symlink each SMS skill so it stays in sync with the installed copy
+  for d in "$SRC"/skills/*/; do n="$(basename "$d")"; ln -sfn "$SKILLS/$n" "$CC_HOME/skills/$n"; done
+  # seed onboarding/theme so Claude Code doesn't re-prompt in this separate config home
+  [ -f "$HOME/.claude.json" ] && [ ! -f "$CC_HOME/.claude.json" ] && cp "$HOME/.claude.json" "$CC_HOME/.claude.json" 2>/dev/null || true
+  [ -f "$HOME/.claude/settings.json" ] && cp "$HOME/.claude/settings.json" "$CC_HOME/settings.json" 2>/dev/null || true
+  echo "curated skills home: $CC_HOME ($(ls "$CC_HOME/skills" 2>/dev/null | wc -l) skills for claude-local)"
+fi
+
 # 4. config
 if [ ! -f "$CFG" ]; then
   mkdir -p "$(dirname "$CFG")"; cp "$SRC/config.example" "$CFG"; chmod 600 "$CFG"

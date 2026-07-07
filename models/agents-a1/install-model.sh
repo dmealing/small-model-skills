@@ -12,7 +12,8 @@ GGUF_REPO="${GGUF_REPO:-InternScience/Agents-A1-Q4_K_M-GGUF}"
 GGUF_NAME="${GGUF_NAME:-Agents-A1-Q4_K_M.gguf}"
 BASE_REPO="${BASE_REPO:-InternScience/Agents-A1}"     # source of the chat template
 MODEL_NAME="${MODEL_NAME:-agents-a1}"
-CTX="${CTX:-262144}"  # match the model's native max (Claude Code's system prompt + tool defs alone can exceed 32K)
+CTX="${CTX:-65536}"  # Claude Code's system prompt + tool/skill defs are ~27-30K tokens: 32K truncates real
+                     # sessions, 64K is safe headroom at negligible VRAM cost (native max 262K is wasteful here)
 WORK="${WORK:-$PWD}"
 cd "$WORK"
 

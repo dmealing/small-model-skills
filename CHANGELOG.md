@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `docs/tuning-local-models.md` — measured tuning guidance (MoE vs dense ~18×, num_ctx, keep-alive, curated
+  skills, AXI output, and the thinking-toggle trap), from real benchmarks on a 12 GB GPU.
+- `claude-local` curated-skills mode: points `CLAUDE_CONFIG_DIR` at a config home exposing only these
+  skills (not every user skill), for a ~5% context trim + smaller tool surface on small models. Built by
+  `install.sh`; opt out with `SMS_CURATED_SKILLS=0`.
+
+### Changed
+- `models/agents-a1` `num_ctx` default 262144 → **65536**. Claude Code's system prompt + tool/skill defs are
+  ~27–30K tokens, so 32K truncates real sessions and 262K wastes KV cache; 64K is the measured safe minimum.
+
 - Diagnostic skills: `network-triage`, `system-triage`, `disk-report`, `log-triage`.
 - Offline-dev skill: `offline-dev` (`offline-prep` pre-flight cache + `offline-doctor`).
 - Deterministic, read-only wrappers (`bin/`): `net-diag`, `router-status`, `sys-diag`, `disk-report`,

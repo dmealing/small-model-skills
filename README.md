@@ -223,6 +223,8 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
 - [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md)
   — macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions, implemented *(design +
   as-built notes)*
+- [`docs/tuning-local-models.md`](docs/tuning-local-models.md) — what actually makes a local model usable
+  here, measured: MoE vs dense (~18×), num_ctx, keep-alive, curated skills, and the traps *(reference)*
 - [`models/README.md`](models/README.md) — getting a local model working with Claude Code, incl. the Ollama
   template gotcha *(reference)*
 - [`modules/router/interface.md`](modules/router/interface.md) — add a router/firewall vendor *(reference)*
