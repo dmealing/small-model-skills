@@ -16,3 +16,7 @@ skills/model-bench/results.jsonl
 skills/model-bench/gemini-judgments.json
 skills/model-bench/gemini-judgments.jsonl
 skills/model-bench/reasons-by-model.md
+
+# Python bytecode (e.g. from running judge.py)
+__pycache__/
+*.pyc
