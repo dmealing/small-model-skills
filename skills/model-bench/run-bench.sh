@@ -12,7 +12,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TASKS="$HERE/tasks-hard.json"
 OUT="$HERE/results.jsonl"
 CC_HOME="${CC_HOME:-$HOME/.config/small-model-skills/cc-home}"
-MODELS=("${@:-}")
+MODELS=("$@")
 [ ${#MODELS[@]} -gt 0 ] || MODELS=(ollama:qwen3-coder-cc ollama:qwen3-instruct-cc openrouter:z-ai/glm-5.2)
 
 or_key() { sed -n 's/^OPENROUTER_API_KEY=//p' "$HOME/.config/small-model-skills/openrouter.env" 2>/dev/null | head -1; }
@@ -47,7 +47,7 @@ for spec in "${MODELS[@]}"; do
     bash_ok="$(jq -r ".[$i].bash" "$TASKS")"
     tools=(); [ "$bash_ok" = "true" ] && tools=(--allowedTools Bash)
     t0="$(date +%s)"
-    out="$(eval "env $(model_env "$spec") CLAUDE_CONFIG_DIR=$CC_HOME ANTHROPIC_API_KEY= CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 timeout 200 claude -p \"\$prompt\" ${tools[*]} --output-format json </dev/null 2>/dev/null")"
+    out="$(env $(model_env "$spec") CLAUDE_CONFIG_DIR=$CC_HOME ANTHROPIC_API_KEY= CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 timeout 200 claude -p "$prompt" "${tools[@]}" --output-format json </dev/null 2>/dev/null)"
     t1="$(date +%s)"
     res="$(printf '%s' "$out" | jq -r '.result // "(timeout/no-result)"' 2>/dev/null)"
     jq -n --arg m "$spec" --arg id "$id" --argjson secs "$((t1-t0))" --arg out "$res" \
