@@ -42,7 +42,7 @@ run on, and to catch regressions when a model or prompt changes.
 - **Tasks / rubrics** live in `tasks-hard.json` — add tasks or tighten rubrics there.
   Each task is `{id, bash, prompt, rubric}`; `bash:true` grants the Bash tool.
 - **Models** are CLI args to `run-bench.sh` (see step 1). Keys: `ollama` needs none;
-  `zai` reads `~/.config/small-model-skills/zai.env`; `openrouter` reads
+  `zai` reads `~/.config/small-model-skills/zai.env` (`ZAI_API_KEY=...`); `openrouter` reads
   `~/.config/small-model-skills/openrouter.env` (`OPENROUTER_API_KEY=...`). The judge
   reads its Gemini key from `GEMINI_API_KEY` or `~/.config/small-model-skills/gemini.key`.
 
