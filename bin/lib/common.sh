@@ -3,6 +3,13 @@
 # Sourced by every bin/ wrapper. Read-only; defines no side effects beyond loading config.
 
 have(){ command -v "$1" >/dev/null 2>&1; }
+# sms_timeout <seconds> <cmd...> — run an EXTERNAL command with a wall-clock cap so a slow tool (a `du`
+# over a huge tree, a hung mount) can't hang a wrapper past the model's patience. Uses timeout/gtimeout
+# where available; degrades to running uncapped if neither is present. Exit 124 = it was killed for time.
+sms_timeout(){ local s="$1"; shift
+  if have timeout; then command timeout "$s" "$@"
+  elif have gtimeout; then command gtimeout "$s" "$@"
+  else "$@"; fi; }
 sms_human(){ awk -v b="${1:-0}" 'BEGIN{split("B KB MB GB TB PB",u," "); i=1; while(b>=1024 && i<6){b/=1024;i++} printf (i==1?"%d %s":"%.1f %s"), b, u[i]}'; }
 
 # --- OS detection (WSL2 counts as linux; override SMS_OS=linux|macos for manual testing) ---

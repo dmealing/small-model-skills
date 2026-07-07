@@ -19,13 +19,21 @@ printf '%s\n' "$fs" | awk 'NR==1||/%/{print "  "$0}' | head -14
 target=$(sms_df_fullest)
 target="${target:-/}"
 sms_sec "biggest dirs one level under $target"
-sms_du_top1 "$target" | sort -rh -k1 | head -12 \
-  | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}' | sms_toon dirs size,path
+dirs="$(sms_du_top1 "$target" | sort -rh -k1 | head -12 | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}')"
+if [ -n "$dirs" ]; then
+  printf '%s\n' "$dirs" | sms_toon dirs size,path
+else
+  echo "  (the tree under $target was too large to size within the time limit — see common hogs + the"
+  echo "   biggest-files command in the verdict below; raise SMS_DU_TIMEOUT to try harder)"
+fi
 
 sms_sec "common space hogs"
+# /var/lib/docker is intentionally NOT du'd here — it's slow and 'docker system df' below reports it exactly.
 hog_rows=""
-for d in /var/log "$HOME/.cache" /var/cache /var/lib/docker /tmp; do
-  [ -d "$d" ] && hog_rows="${hog_rows}$(sms_du_summary "$d"),$d
+for d in /var/log "$HOME/.cache" /var/cache /tmp; do
+  [ -d "$d" ] || continue
+  sz="$(sms_du_summary "$d")"; [ -n "$sz" ] || sz="(too large — timed out)"
+  hog_rows="${hog_rows}${sz},$d
 "
 done
 printf '%s' "$hog_rows" | grep -v '^$' | sms_toon common_hogs size,path

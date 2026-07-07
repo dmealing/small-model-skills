@@ -31,8 +31,10 @@ sms_df_fullest(){
   df -P -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null \
     | awk 'NR>1{u=$5; gsub("%","",u); if(u+0>m){m=u+0;p=$6}} END{print p}'
 }
-sms_du_top1(){ du -x -h -d1 "$1" 2>/dev/null; }
-sms_du_summary(){ du -x -sh "$1" 2>/dev/null | cut -f1; }
+# Bounded: `du` over a full filesystem walks the whole tree and can take minutes; cap it so disk-report
+# stays responsive. On timeout, du is killed and output is empty — the caller reports that honestly.
+sms_du_top1(){ sms_timeout "${SMS_DU_TIMEOUT:-20}" du -x -h -d1 "$1" 2>/dev/null; }
+sms_du_summary(){ sms_timeout "${SMS_DU_HOG_TIMEOUT:-8}" du -x -sh "$1" 2>/dev/null | cut -f1; }
 
 # --- diagnostics for ollama-doctor / freeze-forensics / runaway-hunter (Linux) ---
 sms_gpu_name(){ nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1; }
