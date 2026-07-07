@@ -10,8 +10,7 @@ RAM); yours will differ, but the *shape* holds. The honest headline: **model cho
 - [2. num_ctx: big enough not to truncate (correctness, not speed)](#2-num_ctx)
 - [3. keep-alive: avoid the cold-load tax](#3-keep-alive)
 - [4. Curated skills: a small, real context trim](#4-curated-skills)
-- [5. Thinking on/off: a trap — it doesn't apply through Claude Code](#5-thinking)
-- [6. AXI output: why the wrappers digest instead of dump](#6-axi)
+- [5. AXI output: why the wrappers digest instead of dump](#5-axi)
 
 <a name="1-model-choice"></a>
 ## 1. Pick a small MoE, not a dense model — this is the whole game
@@ -20,14 +19,15 @@ On a VRAM-constrained box, a **Mixture-of-Experts** model (big total, few *activ
 dense model of similar knowledge by an order of magnitude, because only the active experts compute per
 token. Same box, same prompt:
 
-| Model | Type | Speed | 822-token answer |
-|---|---|---|---|
-| **Agents-A1** (35B total, ~3B active) | MoE | **47.8 tok/s** | **17 s** |
-| Nemotron-Super-49B | dense | 2.7 tok/s | ~5 min |
+| Model | Type | Speed |
+|---|---|---|
+| **qwen3-coder** (~30B, MoE) | MoE | **39.8 tok/s** |
+| a dense 49B | dense | 2.7 tok/s |
 
-**~18×.** A dense 49B/70B *runs* on 64 GB RAM (hybrid GPU/CPU) but is too slow for an agentic loop; the
-~30B-class MoE is the sweet spot — reliable enough to trust, fast enough to beat doing it by hand.
-Everything else on this page is a rounding error next to this choice.
+**~15×.** A dense 49B/70B *runs* on 64 GB RAM (hybrid GPU/CPU) but is far too slow for an agentic loop; a
+~30B MoE coder model is the sweet spot — capable enough to trust, fast enough to beat doing it by hand.
+Everything else on this page is a rounding error next to this choice. `qwen3-coder` is the tested default;
+any comparable ~30B MoE will do.
 
 <a name="2-num_ctx"></a>
 ## 2. num_ctx: big enough not to truncate (correctness, not speed)
@@ -38,23 +38,23 @@ model's own instructions — it gets *dumber* mid-session. This is a correctness
 
 - `num_ctx 32K` → ~3–5K headroom → truncates on any real conversation. **Avoid.**
 - `num_ctx 64K` → ~35K headroom → safe. KV-cache growth is negligible next to the model weights (measured:
-  same 22 GB footprint, same GPU/CPU split at 32K vs 64K). **Use this.**
-- `num_ctx 262K` (a model's native max) → wasteful KV cache for no benefit here.
+  same footprint and GPU/CPU split at 32K vs 64K). **Use this.**
+- A model's native max (often 256K+) → wasteful KV cache for no benefit here.
 
-The `models/agents-a1/` recipe ships `num_ctx 65536` for this reason.
+The [`models/qwen-coder/`](../models/qwen-coder/Modelfile) recipe ships `num_ctx 65536` for this reason.
 
 <a name="3-keep-alive"></a>
 ## 3. keep-alive: avoid the cold-load tax
 
-Loading a 22 GB model that spills to CPU costs real seconds. Measured:
+Loading an ~18 GB model that spills to CPU costs real seconds. Measured:
 
 | | total |
 |---|---|
-| **Cold** (model evicted, must load) | ~47 s |
+| **Cold** (model evicted, must load) | ~45 s |
 | **Warm** (resident) | ~5 s |
 
 Ollama keeps a model resident for **5 min** by default, so back-to-back use is warm. If you use the skills
-intermittently, extend it so you don't pay the ~45 s reload each time:
+intermittently, extend it so you don't pay the reload each time:
 
 ```bash
 # server-side (systemd drop-in for the ollama service)
@@ -88,29 +88,12 @@ Claude Code's entire config root, so your global `~/.claude` context — `CLAUDE
 with a small, clean context than with your full frontier-model setup. Set `SMS_CURATED_SKILLS=0` to run
 against the full `~/.claude` config instead.
 
-<a name="5-thinking"></a>
-## 5. Thinking on/off: a trap — it doesn't apply through Claude Code
-
-Tempting result, with a catch. Toggling Ollama's `think` parameter on a reasoning model, via the **raw
-`/api/chat` API**, is dramatic for pure narration:
-
-| | output | time |
-|---|---|---|
-| think on | 1,188 tok | 25 s |
-| think off | 40 tok | 0.8 s |
-
-**But `claude-local` doesn't use that endpoint** — it goes through Ollama's Anthropic-compatible
-`/v1/messages`, and on that path the model **does not emit those big hidden thinking blocks** in the first
-place (a reasoning prompt returned ~409 tokens with its reasoning inline, not a 1,000-token think-dump). So
-there's nothing to turn off: **the thinking penalty is a raw-API artifact and does not apply to the path
-these skills actually run on.** Don't waste time chasing it here. (If you drive Ollama directly, it's real.)
-
-<a name="6-axi"></a>
-## 6. AXI output: why the wrappers digest instead of dump
+<a name="5-axi"></a>
+## 5. AXI output: why the wrappers digest instead of dump
 
 Each wrapper prints a bounded [AXI](https://axi.md/) digest — an identity line, TOON tables, a **verdict**,
 and `help[]` hints — rather than a raw command dump. Feeding a model the same facts two ways (raw `ps`/`free`
-output vs. the digest), via the raw API:
+output vs. the digest):
 
 | | input | output | time |
 |---|---|---|---|
@@ -124,5 +107,5 @@ into a huge, wrong answer. This is [Anthropic's own tool-writing guidance](https
 
 ---
 
-**Bottom line:** run a ~30B MoE (Agents-A1), give it `num_ctx 64K`, keep it warm, let the wrappers digest.
-Skip the thinking rabbit hole. Model choice is 18×; everything else is single digits.
+**Bottom line:** run a ~30B MoE (`qwen3-coder`), give it `num_ctx 64K`, keep it warm, let the wrappers
+digest. Model choice is ~15×; everything else is single digits.

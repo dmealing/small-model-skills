@@ -1,9 +1,0 @@
-FROM ./Agents-A1-Q4_K_M-fixed.gguf
-# 64K: Claude Code's system prompt + tool/skill defs alone are ~27-30K tokens, so 32K truncates a real
-# session and degrades the model; 64K leaves safe headroom for tool outputs + turns. The model's native
-# max is 262K, but that KV cache is wasteful on a consumer GPU for no benefit here. Measured on a 12GB card.
-PARAMETER num_ctx 65536
-PARAMETER temperature 0.85
-PARAMETER top_p 0.95
-PARAMETER top_k 20
-PARAMETER presence_penalty 1.1

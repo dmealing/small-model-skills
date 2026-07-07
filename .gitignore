@@ -8,9 +8,5 @@
 # local private denylist for the public-repo leak hooks (real names stay untracked)
 .githooks/deny-list.local
 
-# downloaded/converted model weights (tens of GB), the chat template install-model.sh downloads +
-# patches at build time, and the download cache — never commit these to a public repo; they're
-# regenerated locally by install-model.sh, not authored content
+# model weights — never commit these to a public repo (tens of GB, not authored content)
 models/**/*.gguf
-models/**/chat_template.jinja
-models/**/.cache/

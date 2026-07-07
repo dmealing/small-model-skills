@@ -23,11 +23,10 @@ SNMP_COMMUNITY=public       # SNMP v2c read community
 ROUTER_CRED_ITEM=           # password-manager item for router admin creds (ONLINE only), e.g. op-get item name
 # ROUTER_CRED_FILE=~/.config/small-model-skills/router.cred   # optional cached "user=.../pass=..." (chmod 600) for OFFLINE REST
 
-# --- Local models (Ollama; used by the `claude-local` launcher) ---
-LOCAL_MODEL_DEFAULT=agents-a1                        # alias used when claude-local is run with no arg
-LOCAL_MODEL_QWABLE=hf.co/Mia-AiLab/Qwable-3.6-27b    # `claude-local qwable`
-LOCAL_MODEL_AGENTS_A1=agents-a1                      # `claude-local agents-a1` (see models/agents-a1/)
-# No entry/alias for a 70B here on purpose — see bin/claude-local's header comment.
+# --- Local model (Ollama; used by the `claude-local` launcher) ---
+LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any capable ~30B MoE coder works;
+                                   # qwen3-coder-cc is the tested default — the num_ctx recipe built in models/.
+# No 70B shortcut on purpose — a 70B local load is a real resource risk; pass the full tag explicitly.
 # claude-local exposes ONLY this repo's skills by default (a curated CLAUDE_CONFIG_DIR home built by
 # install.sh), which also means your global ~/.claude context does not load. Uncomment to opt out and use
 # your full ~/.claude config instead. See docs/tuning-local-models.md.

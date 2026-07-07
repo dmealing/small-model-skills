@@ -136,36 +136,29 @@ $ claude-local
 ## Setup
 
 ### 1. A local model in Ollama
-Install [Ollama](https://ollama.com), then pull a **tool-capable** coder model:
+Install [Ollama](https://ollama.com), then pull a **tool-capable** coder model — `qwen3-coder` is the
+tested default (any comparable ~30B MoE coder works):
 ```bash
-ollama pull qwen2.5-coder:14b     # fits a 12 GB GPU; fast
-# or qwen3-coder / a Qwable GGUF (needs Ollama >= 0.24 for the qwen3.6 arch)
+ollama pull qwen3-coder
 ```
 Raise the served context (Ollama defaults to ~4K, too small for an agent) via a Modelfile — use **64K**,
 not 32K: Claude Code's system prompt + tool/skill defs alone are ~27–30K tokens, so 32K truncates real
-sessions (see [`docs/tuning-local-models.md`](docs/tuning-local-models.md#2-num_ctx)):
-```
-FROM qwen2.5-coder:14b
-PARAMETER num_ctx 65536
-```
+sessions (see [`docs/tuning-local-models.md`](docs/tuning-local-models.md#2-num_ctx)). The bundled recipe
+does exactly this:
 ```bash
-ollama create qwen2.5-coder-cc -f Modelfile
+ollama create qwen3-coder-cc -f models/qwen-coder/Modelfile   # same weights, num_ctx 65536
 ```
-For an **agent-purpose** engine, see [`models/agents-a1/`](models/agents-a1/) — Agents-A1 (35B MoE, 3B
-active) is built for tool-loops; its GGUF needs a one-line template fix that `install-model.sh` applies.
 
 ### 2. Point Claude Code at it offline
 Ollama ≥ 0.14 speaks Anthropic's API natively, so no proxy is needed. `bin/claude-local` (installed onto
 your PATH by `install.sh`, step 3 below) does the env-var wiring for you:
 ```bash
-claude-local                # uses LOCAL_MODEL_DEFAULT from config (or agents-a1)
-claude-local qwable         # -> LOCAL_MODEL_QWABLE
-claude-local agents-a1      # -> LOCAL_MODEL_AGENTS_A1 (see models/agents-a1/)
-claude-local llama3.3:70b   # anything else is passed straight through as a raw Ollama tag —
-                             # no short alias for a 70B+ model on purpose; see config.example
+claude-local                # uses LOCAL_MODEL_DEFAULT from config (qwen3-coder-cc)
+claude-local qwen3-coder-cc # or name any Ollama model tag to use it
+claude-local llama3.3:70b   # a 70B is a real resource risk — no shortcut, pass the full tag on purpose
 ```
-Your normal `claude` is untouched; `claude-local` uses the offline model. Model names/tags live in
-`~/.config/small-model-skills/config` (`LOCAL_MODEL_*`), not hardcoded in the script.
+Your normal `claude` is untouched; `claude-local` uses the offline model. The default model lives in
+`~/.config/small-model-skills/config` (`LOCAL_MODEL_DEFAULT`), not hardcoded in the script.
 
 By default `claude-local` also runs in **curated-skills mode**: it points `CLAUDE_CONFIG_DIR` at a config
 home (built by `install.sh`, step 3) that exposes **only this repo's skills**, giving a small model a
@@ -240,7 +233,7 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
   — macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions, implemented *(design +
   as-built notes)*
 - [`docs/tuning-local-models.md`](docs/tuning-local-models.md) — what actually makes a local model usable
-  here, measured: MoE vs dense (~18×), num_ctx, keep-alive, curated skills, and the traps *(reference)*
+  here, measured: MoE vs dense (~15×), num_ctx, keep-alive, curated skills, and AXI output *(reference)*
 - [`models/README.md`](models/README.md) — getting a local model working with Claude Code, incl. the Ollama
   template gotcha *(reference)*
 - [`modules/router/interface.md`](modules/router/interface.md) — add a router/firewall vendor *(reference)*
