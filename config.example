@@ -24,8 +24,8 @@ ROUTER_CRED_ITEM=           # password-manager item for router admin creds (ONLI
 # ROUTER_CRED_FILE=~/.config/small-model-skills/router.cred   # optional cached "user=.../pass=..." (chmod 600) for OFFLINE REST
 
 # --- Local model (Ollama; used by the `claude-local` launcher) ---
-LOCAL_MODEL_DEFAULT=qwen3-coder    # model claude-local uses with no arg. Any capable ~30B MoE coder works;
-                                   # qwen3-coder is the tested default. See models/ for the num_ctx recipe.
+LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any capable ~30B MoE coder works;
+                                   # qwen3-coder-cc is the tested default — the num_ctx recipe built in models/.
 # No 70B shortcut on purpose — a 70B local load is a real resource risk; pass the full tag explicitly.
 # claude-local exposes ONLY this repo's skills by default (a curated CLAUDE_CONFIG_DIR home built by
 # install.sh), which also means your global ~/.claude context does not load. Uncomment to opt out and use

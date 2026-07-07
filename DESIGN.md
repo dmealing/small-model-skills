@@ -158,7 +158,7 @@ README's Setup section), not something an installer silently does to your global
 ## Local model launcher
 
 `bin/claude-local [<ollama model tag>]` — one launcher, config-driven
-(`LOCAL_MODEL_DEFAULT` in `config.example`, `qwen3-coder`), replacing near-duplicate shell functions.
+(`LOCAL_MODEL_DEFAULT` in `config.example`, `qwen3-coder-cc`), replacing near-duplicate shell functions.
 Deliberately has **no short alias for a 70B+ model** — picking one requires spelling out the full Ollama tag
 (`claude-local llama3.3:70b`), not a single memorable word, because loading a model that size is a real
 resource commitment on a laptop (it's taken this machine down before).

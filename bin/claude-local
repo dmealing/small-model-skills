@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # claude-local — run Claude Code against a local Ollama model, fully offline.
 # Usage: claude-local [<ollama model tag>] [-- claude args...]
-#   No arg -> $CLAUDE_LOCAL_MODEL env, else LOCAL_MODEL_DEFAULT from config, else qwen3-coder.
+#   No arg -> $CLAUDE_LOCAL_MODEL env, else LOCAL_MODEL_DEFAULT from config, else qwen3-coder-cc.
 #   A tag  -> used as the Ollama model (e.g. `claude-local qwen2.5-coder:14b`).
-# Any capable ~30B-class MoE coder model works; qwen3-coder is the tested default. A 70B local load is a
+# Any capable ~30B-class MoE coder model works; qwen3-coder-cc is the tested default. A 70B local load is a
 # real resource risk, so there's no shortcut — pass the full tag explicitly if you want one.
 set -euo pipefail
 
@@ -11,7 +11,7 @@ SMS_CONFIG="${SMS_CONFIG:-$HOME/.config/small-model-skills/config}"
 # shellcheck disable=SC1090
 [ -r "$SMS_CONFIG" ] && . "$SMS_CONFIG"
 
-: "${LOCAL_MODEL_DEFAULT:=qwen3-coder}"
+: "${LOCAL_MODEL_DEFAULT:=qwen3-coder-cc}"
 
 model="${CLAUDE_LOCAL_MODEL:-$LOCAL_MODEL_DEFAULT}"
 case "${1:-}" in

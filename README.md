@@ -153,7 +153,7 @@ ollama create qwen3-coder-cc -f models/qwen-coder/Modelfile   # same weights, nu
 Ollama ≥ 0.14 speaks Anthropic's API natively, so no proxy is needed. `bin/claude-local` (installed onto
 your PATH by `install.sh`, step 3 below) does the env-var wiring for you:
 ```bash
-claude-local                # uses LOCAL_MODEL_DEFAULT from config (qwen3-coder)
+claude-local                # uses LOCAL_MODEL_DEFAULT from config (qwen3-coder-cc)
 claude-local qwen3-coder-cc # or name any Ollama model tag to use it
 claude-local llama3.3:70b   # a 70B is a real resource risk — no shortcut, pass the full tag on purpose
 ```
@@ -233,7 +233,7 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
   — macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions, implemented *(design +
   as-built notes)*
 - [`docs/tuning-local-models.md`](docs/tuning-local-models.md) — what actually makes a local model usable
-  here, measured: MoE vs dense (~18×), num_ctx, keep-alive, curated skills, and the traps *(reference)*
+  here, measured: MoE vs dense (~15×), num_ctx, keep-alive, curated skills, and AXI output *(reference)*
 - [`models/README.md`](models/README.md) — getting a local model working with Claude Code, incl. the Ollama
   template gotcha *(reference)*
 - [`modules/router/interface.md`](modules/router/interface.md) — add a router/firewall vendor *(reference)*
