@@ -39,3 +39,7 @@ RUNAWAY_AGE_HOURS=4                 # ... AND running longer than this many hour
 RUNAWAY_OFFENDERS=                  # extra comm/name patterns to always flag, space-separated (e.g. "bun pop-upgrade")
 KNOWN_BAD_KERNELS=                  # freeze-forensics: kernel versions to warn about, space-separated (blank = none)
 FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log (host-specific; blank = off)
+
+# --- File search (file-search skill / find-files) ---
+SEARCH_ROOT=            # default dir to search when none is given (blank = current dir; e.g. set to $HOME)
+SEARCH_MAX=20           # cap results per section (names / contents)

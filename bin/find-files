@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# find-files — read-only search for files by NAME and by CONTENT. Prefers ripgrep/fd; falls back to
+# grep/find. Bounded (time + result cap) so a big tree can't hang it. Changes nothing.
+# Usage: find-files <query> [path]     (path default: $SEARCH_ROOT from config, else the current dir)
+# Exit: 0 ran (matches or not), 2 usage error.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_identity "Read-only: find files by name or content (ripgrep/fd, falls back to grep/find)"
+
+q="${1:-}"
+[ -n "$q" ] || { echo "usage: find-files <query> [path]   (searches file names AND contents)"; exit 2; }
+path="${2:-${SEARCH_ROOT:-$PWD}}"
+[ -d "$path" ] || { echo "  ERROR: no such directory: $path"; exit 2; }
+MAX="${SEARCH_MAX:-20}"
+NT="${SEARCH_NAME_TIMEOUT:-15}"
+CT="${SEARCH_CONTENT_TIMEOUT:-20}"
+# a name-search binary: fd (or fdfind on Debian/Ubuntu), else find
+FD=""; have fd && FD=fd; [ -z "$FD" ] && have fdfind && FD=fdfind
+
+sms_line "query" "$q"
+sms_line "path"  "$path"
+
+sms_sec "files with a matching NAME"
+if [ -n "$FD" ]; then
+  names="$(sms_timeout "$NT" "$FD" -i -H -t f -- "$q" "$path" 2>/dev/null | head -"$MAX")"
+else
+  # find fallback: case-insensitive name glob, skip the usual noise dirs
+  names="$(sms_timeout "$NT" find "$path" \( -name .git -o -name node_modules -o -name .cache \) -prune -o \
+           -type f -iname "*$q*" -print 2>/dev/null | head -"$MAX")"
+fi
+printf '%s\n' "$names" | grep -v '^$' | sms_toon name_matches path
+
+sms_sec "files whose CONTENTS match"
+if have rg; then
+  content="$(sms_timeout "$CT" rg -l -i --hidden --no-messages -g '!.git' -- "$q" "$path" 2>/dev/null | head -"$MAX")"
+else
+  content="$(sms_timeout "$CT" grep -rli --exclude-dir=.git --exclude-dir=node_modules -- "$q" "$path" 2>/dev/null | head -"$MAX")"
+fi
+printf '%s\n' "$content" | grep -v '^$' | sms_toon content_matches path
+
+sms_sec "verdict"
+# grep -c prints 0 on no match (and exits 1 — that's fine here); don't append a second 0
+nn=$(printf '%s' "$names"   | grep -c .); nn=${nn:-0}
+nc=$(printf '%s' "$content" | grep -c .); nc=${nc:-0}
+if [ "$nn" -eq 0 ] && [ "$nc" -eq 0 ]; then
+  echo "  No matches for '$q' under $path."
+  sms_help "Widen the search: pass a broader path (e.g. \$HOME), or try a shorter/looser query" \
+           "Only the current dir was searched unless SEARCH_ROOT is set or you passed a path"
+else
+  echo "  Found $nn file(s) by name and $nc by content (capped at $MAX each)."
+  sms_help "See matching lines in a content hit: rg -n -i '$q' <file>   (or grep -ni '$q' <file>)" \
+           "Open a hit: your editor <file>. This tool only searches — it changes nothing."
+fi
+exit 0
