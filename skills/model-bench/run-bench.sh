@@ -47,7 +47,7 @@ for spec in "${MODELS[@]}"; do
     bash_ok="$(jq -r ".[$i].bash" "$TASKS")"
     tools=(); [ "$bash_ok" = "true" ] && tools=(--allowedTools Bash)
     t0="$(date +%s)"
-    out="$(env $(model_env "$spec") CLAUDE_CONFIG_DIR=$CC_HOME ANTHROPIC_API_KEY= CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 timeout 200 claude -p "$prompt" "${tools[@]}" --output-format json </dev/null 2>/dev/null)"
+    out="$(env $(model_env "$spec") CLAUDE_CONFIG_DIR=$CC_HOME ANTHROPIC_API_KEY= CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 timeout 200 claude -p "$prompt" "${tools[@]}" --output-format json </dev/null 2>/dev/null)" || out=
     t1="$(date +%s)"
     res="$(printf '%s' "$out" | jq -r '.result // "(timeout/no-result)"' 2>/dev/null)"
     jq -n --arg m "$spec" --arg id "$id" --argjson secs "$((t1-t0))" --arg out "$res" \
