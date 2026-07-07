@@ -33,8 +33,24 @@ case "${1:-}" in
 esac
 model="$(resolve_model "$alias_arg")"
 
-echo "claude-local: $alias_arg -> $model" >&2
+# Curated-skills mode: point Claude Code at a config home that exposes ONLY the small-model-skills,
+# not every user skill. A small model's tool-selection degrades as the skill/tool count grows, and each
+# unused skill's description is dead weight in an already-tight context (Claude Code's own system prompt is
+# ~27-30K tokens). install.sh builds this home. Opt out with SMS_CURATED_SKILLS=0. Falls back silently to
+# the normal config if the home was never built.
+# NOTE: this relocates CLAUDE_CONFIG_DIR to $CC_HOME, so global ~/.claude context — CLAUDE.md directives,
+# custom agents/, and commands/ — does NOT load in curated mode. That is deliberate: a weak model does
+# better with a small, clean context than with a full frontier-model setup. Use SMS_CURATED_SKILLS=0 to run
+# against the full ~/.claude config instead.
+CC_HOME="${SMS_CC_HOME:-$HOME/.config/small-model-skills/cc-home}"
+cc_env=()
+if [ "${SMS_CURATED_SKILLS:-1}" != 0 ] && [ -d "$CC_HOME/skills" ]; then
+  cc_env=(CLAUDE_CONFIG_DIR="$CC_HOME")
+fi
+
+echo "claude-local: $alias_arg -> $model${cc_env:+  (curated skills)}" >&2
 exec env \
+  ${cc_env[@]+"${cc_env[@]}"} \
   ANTHROPIC_BASE_URL="http://localhost:11434" \
   ANTHROPIC_AUTH_TOKEN="ollama" \
   ANTHROPIC_API_KEY="" \

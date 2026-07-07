@@ -141,10 +141,12 @@ Install [Ollama](https://ollama.com), then pull a **tool-capable** coder model:
 ollama pull qwen2.5-coder:14b     # fits a 12 GB GPU; fast
 # or qwen3-coder / a Qwable GGUF (needs Ollama >= 0.24 for the qwen3.6 arch)
 ```
-Raise the served context (Ollama defaults to ~4K, too small for an agent) via a Modelfile:
+Raise the served context (Ollama defaults to ~4K, too small for an agent) via a Modelfile — use **64K**,
+not 32K: Claude Code's system prompt + tool/skill defs alone are ~27–30K tokens, so 32K truncates real
+sessions (see [`docs/tuning-local-models.md`](docs/tuning-local-models.md#2-num_ctx)):
 ```
 FROM qwen2.5-coder:14b
-PARAMETER num_ctx 32768
+PARAMETER num_ctx 65536
 ```
 ```bash
 ollama create qwen2.5-coder-cc -f Modelfile
@@ -165,10 +167,18 @@ claude-local llama3.3:70b   # anything else is passed straight through as a raw 
 Your normal `claude` is untouched; `claude-local` uses the offline model. Model names/tags live in
 `~/.config/small-model-skills/config` (`LOCAL_MODEL_*`), not hardcoded in the script.
 
+By default `claude-local` also runs in **curated-skills mode**: it points `CLAUDE_CONFIG_DIR` at a config
+home (built by `install.sh`, step 3) that exposes **only this repo's skills**, giving a small model a
+smaller, cleaner context and tool surface. A side effect is that your global `~/.claude` context —
+`CLAUDE.md` directives, custom `agents/`, and `commands/` — does **not** load in this mode. Opt out with
+`SMS_CURATED_SKILLS=0` to run against your full `~/.claude` config instead. Measured rationale:
+[`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
+
 ### 3. Install the skills
 ```bash
 git clone <this-repo> && cd small-model-skills
-./install.sh            # copies skills -> ~/.claude/skills, links wrappers, seeds a config
+./install.sh            # copies skills -> ~/.claude/skills, links wrappers, seeds a config,
+                        # and builds a curated skills home for claude-local
 ```
 Override the wrapper location with `SMS_BINDIR=~/bin ./install.sh` if `~/.local/bin` isn't on your PATH.
 
@@ -209,6 +219,12 @@ Claude Code sessions (checks `ANTHROPIC_BASE_URL` first), but touches your globa
 ```
 (Merge into the existing `hooks.SessionStart` array — don't replace other entries.)
 
+Note: default curated-skills mode (step 2) reads settings from the curated home, not `~/.claude`, and
+`install.sh` copies your `~/.claude/settings.json` into it. So after adding the hook, re-run `./install.sh`
+to sync it in (or add the same block directly to `$CC_HOME/settings.json`, default
+`~/.config/small-model-skills/cc-home/settings.json`). With `SMS_CURATED_SKILLS=0`, `~/.claude/settings.json`
+is used directly and no extra step is needed.
+
 ## Routers
 `network-triage` reads live WAN status over generic SNMP (any SNMP router — just set `WAN_PRIMARY`/
 `WAN_BACKUP`/`SNMP_COMMUNITY`). A **module** adds vendor detail; a SonicWall (SonicOS 7) reference module
@@ -223,6 +239,8 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
 - [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md)
   — macOS/Windows(WSL2) support + [AXI](https://axi.md/) output conventions, implemented *(design +
   as-built notes)*
+- [`docs/tuning-local-models.md`](docs/tuning-local-models.md) — what actually makes a local model usable
+  here, measured: MoE vs dense (~18×), num_ctx, keep-alive, curated skills, and the traps *(reference)*
 - [`models/README.md`](models/README.md) — getting a local model working with Claude Code, incl. the Ollama
   template gotcha *(reference)*
 - [`modules/router/interface.md`](modules/router/interface.md) — add a router/firewall vendor *(reference)*

@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `docs/tuning-local-models.md` — measured tuning guidance (MoE vs dense ~18×, num_ctx, keep-alive, curated
+  skills, AXI output, and the thinking-toggle trap), from real benchmarks on a 12 GB GPU.
+- `claude-local` curated-skills mode: points `CLAUDE_CONFIG_DIR` at a config home exposing only these
+  skills (not every user skill), for a ~5% context trim + smaller tool surface on small models. Built by
+  `install.sh`; opt out with `SMS_CURATED_SKILLS=0`.
 - Diagnostic skills: `network-triage`, `system-triage`, `disk-report`, `log-triage`.
 - Offline-dev skill: `offline-dev` (`offline-prep` pre-flight cache + `offline-doctor`).
 - Deterministic, read-only wrappers (`bin/`): `net-diag`, `router-status`, `sys-diag`, `disk-report`,
@@ -41,6 +46,10 @@ All notable changes to this project are documented here. The format is based on
   `SKILL.md` frontmatter + the wrappers via a new optional `x-wrappers:` key (added to every skill).
 - New cross-platform `sms_*` helpers in `bin/lib/os-{linux,macos}.sh` for the above (`sms_gpu_vram_free`,
   `sms_watchdog_status`, `sms_procs_aged`, boot / MCE / reset-reason readers, …), kept at full parity.
+
+### Changed
+- `models/agents-a1` `num_ctx` default 262144 → **65536**. Claude Code's system prompt + tool/skill defs are
+  ~27–30K tokens, so 32K truncates real sessions and 262K wastes KV cache; 64K is the measured safe minimum.
 
 ### Fixed
 - `bin/lib/os-macos.sh`: `vm_stat` field-position bug (indexing from a fixed column broke once a

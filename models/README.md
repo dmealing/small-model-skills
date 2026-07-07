@@ -8,7 +8,9 @@ models often trip — so this directory documents the setup and ships reproducib
 - **Tool-calling** capability (Ollama `ollama show <model>` lists `tools`). Agentic skills are useless without it.
 - **A chat template Ollama can drive with a system message + tools present** — because Claude Code always sends
   a large system prompt plus tool definitions.
-- Raised context: Ollama defaults to ~4K, too small for an agent. Use a Modelfile `PARAMETER num_ctx 32768`.
+- Raised context: Ollama defaults to ~4K, too small for an agent. Use a Modelfile `PARAMETER num_ctx 65536` —
+  32K truncates real sessions (Claude Code's system prompt + tool defs alone are ~27–30K tokens); see
+  [`../docs/tuning-local-models.md`](../docs/tuning-local-models.md#2-num_ctx).
 
 ## The gotcha: "System message must be at the beginning"
 Some models (notably Qwen3.5 / Qwen3.6-family GGUFs) ship a Jinja chat template with hard guards like:
