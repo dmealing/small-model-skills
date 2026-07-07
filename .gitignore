@@ -10,3 +10,9 @@
 
 # model weights — never commit these to a public repo (tens of GB, not authored content)
 models/**/*.gguf
+
+# model-bench: generated judge artifacts (regenerate via judge.py)
+skills/model-bench/results.jsonl
+skills/model-bench/gemini-judgments.json
+skills/model-bench/gemini-judgments.jsonl
+skills/model-bench/reasons-by-model.md

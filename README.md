@@ -88,6 +88,11 @@ portability bugs the macOS port surfaced along the way.
 |---|---|
 | `offline-dev` | `offline-prep` (pre-cache deps/images/model *before* you lose signal) + `offline-doctor` (diagnose why a build/run fails offline) |
 
+**Evaluation** (measure which model earns the work):
+| Skill | Does |
+|---|---|
+| `model-bench` | run a hard diagnostic benchmark across models (local Ollama vs cloud GLM) and score them blind + pointwise with a Gemini LLM-as-judge — pick the right model, catch regressions |
+
 **For contributors:** `audit-small-model-skills` + `skill-audit` enforce the authoring standard
 (`docs/authoring-small-model-skills.md`) so new skills stay small-model-safe.
 
@@ -171,6 +176,28 @@ smaller, cleaner context and tool surface. A side effect is that your global `~/
 `CLAUDE.md` directives, custom `agents/`, and `commands/` — does **not** load in this mode. Opt out with
 `SMS_CURATED_SKILLS=0` to run against your full `~/.claude` config instead. Measured rationale:
 [`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
+
+### Which model? (what the benchmark says)
+
+`qwen3-coder-cc` is the tested offline default — fast (~40 tok/s on a 12 GB GPU) and reliable enough on the
+tool loop for the diagnostic skills here. It is **not** the strongest model on these tasks: a blind,
+rubric-scored benchmark (`model-bench`, judged by Gemini 2.5 Pro) put cloud **GLM-5.2 at 34/36** versus
+**qwen3-coder-cc at ~26** and `qwen3-instruct-cc` at ~24. The gap is concentrated where you'd expect —
+**tool selection and restraint** (the qwens sometimes run the wrong tool, skip a required one, or act
+without confirming), not raw reasoning. Re-runs at temperature 0 are near-deterministic; the qwens sit
+near several rubric edges, GLM-5.2 doesn't.
+
+That's the point of building from the constraint down: the local model is the **floor**, and the same
+deterministic skills carry a weaker model reliably. When you're online, a cheap cloud model raises the
+ceiling — GLM-5.2 via [z.ai](https://z.ai) or [OpenRouter](https://openrouter.ai), both of which expose
+Anthropic's `/v1/messages` endpoint so Claude Code runs unmodified, for ~$0.03 a review. `model-bench`
+measures that trade before you bet on a model:
+
+```bash
+cd skills/model-bench
+./run-bench.sh ollama:qwen3-coder-cc openrouter:z-ai/glm-5.2   # run models over the hard-task corpus
+python3 judge.py                                                 # blind Gemini judge -> scorecard
+```
 
 ### 3. Install the skills
 ```bash

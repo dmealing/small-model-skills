@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `model-bench` skill — a repeatable hard-task benchmark + blind, pointwise Gemini LLM-as-judge that scores
+  small models against per-task rubrics. First result (2026-07-07): cloud **GLM-5.2 34/36 >
+  qwen3-coder-cc ~26 > qwen3-instruct-cc ~24**; the qwens trail mainly on tool selection and restraint,
+  not raw reasoning. Use it to pick which model to route agent/review work to and to catch regressions.
+  `run-bench.sh` is provider-driven (`ollama:`/`zai:`/`openrouter:` model specs).
 - `docs/tuning-local-models.md` — measured tuning guidance (MoE vs dense ~15×, num_ctx, keep-alive, curated
   skills, and AXI output), from real benchmarks on a 12 GB GPU.
 - `claude-local` curated-skills mode: points `CLAUDE_CONFIG_DIR` at a config home exposing only these
