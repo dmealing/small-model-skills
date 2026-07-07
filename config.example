@@ -49,3 +49,4 @@ SEARCH_MAX=20           # cap results per section (names / contents)
 # --- Disk report (disk-report skill) ---
 # SMS_DU_TIMEOUT=20       # seconds to spend sizing the biggest dirs one level under the fullest filesystem
 # SMS_DU_HOG_TIMEOUT=8    # seconds per common hog dir (/var/log, ~/.cache, /var/cache, /tmp)
+# SMS_DOCKER_TIMEOUT=8    # seconds for 'docker system df' (bounded so a wedged daemon can't hang the report)

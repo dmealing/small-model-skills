@@ -48,7 +48,15 @@ for d in /var/log "$HOME/.cache" /var/cache /tmp; do
 "
 done
 printf '%s' "$hog_rows" | grep -v '^$' | sms_toon common_hogs size,path
-have docker && sms_line "docker reclaimable" "$(docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"
+# 'docker system df' queries the daemon — cap it like the du walks so a wedged daemon can't hang the report.
+if have docker; then
+  dkr="$(sms_timeout "${SMS_DOCKER_TIMEOUT:-8}" docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"; dkrc=$?
+  if sms_is_timeout "$dkrc"; then
+    sms_line "docker reclaimable" "(timed out — daemon may be wedged)"
+  else
+    sms_line "docker reclaimable" "$dkr"
+  fi
+fi
 
 sms_sec "verdict"
 echo "  Space concentration is shown above. Safe things a human can reclaim after confirming:"
