@@ -20,13 +20,13 @@ All notable changes to this project are documented here. The format is based on
   `skill-audit` metrics linter.
 - Config-driven setup (`config.example` + `~/.config/small-model-skills/config`) and `install.sh`.
 - Pluggable router modules (`modules/router/`) with a SonicWall (SonicOS 7) reference implementation.
-- Model recipe `models/agents-a1/` — patches the Qwen3.5 template's `raise_exception` guards so
-  tool-calling works through Ollama (preserving the model's native tool + reasoning format).
+- Model recipe `models/qwen-coder/` — a Modelfile that raises `qwen3-coder` to `num_ctx 65536` for
+  Claude Code (the tested default engine; any comparable ~30B MoE coder works).
 - Public-repo leak guard (`.githooks/` pre-commit + pre-push, plus a CI `hygiene` workflow).
 - README demo GIF, rendered from real output with no screen recording (`media/build-demo.py`).
-- `bin/claude-local` — a single config-driven launcher (`claude-local qwable|agents-a1|<raw tag>`)
-  replacing three near-duplicate shell functions that used to live directly in `~/.zshrc`. Model
-  names/tags now live in `config.example` (`LOCAL_MODEL_*`). No short alias for a 70B+ model, on purpose.
+- `bin/claude-local` — a single config-driven launcher (`claude-local [<ollama model tag>]`) replacing
+  near-duplicate shell functions. The default model lives in `config.example` (`LOCAL_MODEL_DEFAULT`,
+  `qwen3-coder`). No short alias for a 70B+ model, on purpose.
 - macOS support: `bin/lib/os-macos.sh` (native `sysctl`/`vm_stat`/`route`/`launchctl`/`log show` backend),
   alongside the extracted `bin/lib/os-linux.sh`. `bin/lib/common.sh` now detects the OS once and sources
   the matching backend. `install.sh` detects bare (non-WSL2) Windows and points at WSL2 instead of
@@ -48,8 +48,9 @@ All notable changes to this project are documented here. The format is based on
   `sms_watchdog_status`, `sms_procs_aged`, boot / MCE / reset-reason readers, …), kept at full parity.
 
 ### Changed
-- `models/agents-a1` `num_ctx` default 262144 → **65536**. Claude Code's system prompt + tool/skill defs are
-  ~27–30K tokens, so 32K truncates real sessions and 262K wastes KV cache; 64K is the measured safe minimum.
+- The model recipe ships `num_ctx 65536`. Claude Code's system prompt + tool/skill defs are ~27–30K tokens,
+  so 32K truncates real sessions and a model's native max wastes KV cache; 64K is the measured safe minimum.
+- Default local model is now **`qwen3-coder`** — a well-known, tool-capable ~30B MoE coder.
 
 ### Fixed
 - `bin/lib/os-macos.sh`: `vm_stat` field-position bug (indexing from a fixed column broke once a

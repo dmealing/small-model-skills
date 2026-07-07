@@ -1,7 +1,7 @@
 # small-model-skills — design
 
 A curated, **config-driven** library of Claude Code *Agent Skills* built for **small local models
-running offline** (Qwen2.5 / Qwen3 / Qwable-class, ~7–30B, served by Ollama). It turns a weak,
+running offline** (a ~30B MoE coder like `qwen3-coder`, served by Ollama). It turns a weak,
 internet-less model into a useful **diagnostics + offline-dev assistant** for a Linux workstation.
 
 > Why this exists: as of mid-2026 there is **no** skill library targeting small offline models —
@@ -58,7 +58,7 @@ modules/router/      sonicwall.sh (reference) + interface.md (how to add a vendo
 skills/<name>/SKILL.md   runbooks, mirrors ~/.claude/skills layout
 config.example       generic config template
 install.sh           copy skills → ~/.claude/skills, link bin → PATH, create user config, dep-check
-README.md            setup directions for adopters (Ollama + qwen/qwable + Claude-Code offline + skills)
+README.md            setup directions for adopters (Ollama + qwen-coder + Claude-Code offline + skills)
 DESIGN.md            this file
 LICENSE              MIT
 ```
@@ -85,7 +85,7 @@ LICENSE              MIT
   skill for the human to run.
 - Skills carry no `--dangerously-skip-permissions` in their own definitions or `SKILL.md`s — the
   read-only-by-design boundary lives in what the wrappers *do*, not in a launcher flag. The
-  `claude-local` launcher (in all its `qwable`/`agents-a1`/raw-tag forms) likewise does **not** skip
+  `claude-local` launcher likewise does **not** skip
   permissions: it keeps Claude Code's normal permission prompts, consistent with the propose-don't-apply model and
   `SECURITY.md`. The human-approval gate on the model's tool calls stays in place, and the wrappers stay
   read-only regardless.
@@ -96,8 +96,7 @@ LICENSE              MIT
 
 ## Setup (adopter's path, condensed — full steps in README)
 
-1. Install Ollama; `ollama pull` a tool-capable coder model (`qwen2.5-coder:14b`, `qwen3-coder`, or a
-   Qwable GGUF on Ollama ≥ 0.24).
+1. Install Ollama; `ollama pull` a tool-capable coder model (`qwen3-coder`, or any comparable ~30B MoE).
 2. Point Claude Code at it offline (native Anthropic endpoint at `localhost:11434`) via the `claude-local`
    launcher (installed onto PATH by `install.sh`).
 3. `./install.sh` — copies skills, links wrappers, and walks you through creating your config.
@@ -158,10 +157,9 @@ README's Setup section), not something an installer silently does to your global
 
 ## Local model launcher
 
-`bin/claude-local [qwable|agents-a1|<raw ollama tag>]` — one launcher, config-driven
-(`LOCAL_MODEL_QWABLE`/`LOCAL_MODEL_AGENTS_A1`/`LOCAL_MODEL_DEFAULT` in `config.example`), replacing three
-near-duplicate shell functions that used to live directly in `~/.zshrc`. Deliberately has **no short alias
-for a 70B+ model** — picking one requires spelling out the full Ollama tag
+`bin/claude-local [<ollama model tag>]` — one launcher, config-driven
+(`LOCAL_MODEL_DEFAULT` in `config.example`, `qwen3-coder`), replacing near-duplicate shell functions.
+Deliberately has **no short alias for a 70B+ model** — picking one requires spelling out the full Ollama tag
 (`claude-local llama3.3:70b`), not a single memorable word, because loading a model that size is a real
 resource commitment on a laptop (it's taken this machine down before).
 
