@@ -169,6 +169,8 @@ resource commitment on a laptop (it's taken this machine down before).
 
 - v1: the catalog above, SonicWall router module, Doug's machine as first consumer.
 - Done: cross-platform (macOS native + Windows via WSL2), AXI output conventions, the `claude-local`
-  launcher, and the AXI session-hook ambient-context follow-on — see above.
+  launcher, the AXI session-hook ambient-context follow-on (see above), four more read-only diagnostic
+  skills (`ollama-doctor`, `freeze-forensics`, `runaway-hunter`, `docker-hygiene`), and the `smols`
+  offline catalog CLI that discovers installed skills from their `x-wrappers` frontmatter.
 - Later: publish public repo + docs; add router modules (OPNsense/pfSense/UniFi); add `grammar/` GBNF
   files to constrain tool-call JSON for the weakest models; optional `system-review` deep-dive port.

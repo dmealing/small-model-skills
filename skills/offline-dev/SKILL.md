@@ -1,6 +1,7 @@
 ---
 name: offline-dev
 description: Help write and run code with no internet, for example on a plane. Use before going offline to pre-cache dependencies, or while offline when a build or run fails for lack of network. Read-only — it reports readiness and proposes the right offline commands; it does not auto-install or download.
+x-wrappers: [offline-prep, offline-doctor]
 ---
 
 # Offline development

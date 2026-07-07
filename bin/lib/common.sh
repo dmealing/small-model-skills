@@ -52,6 +52,14 @@ SMS_CONFIG="${SMS_CONFIG:-$HOME/.config/small-model-skills/config}"
 [ -n "$PRIMARY_NIC" ] || PRIMARY_NIC="$(sms_default_iface)"
 : "${ROUTER_HOST:=$GATEWAY_IP}"
 
+# --- diagnostics tuning (ollama-doctor / runaway-hunter / freeze-forensics) ---
+: "${OLLAMA_URL:=http://localhost:11434}"
+: "${RUNAWAY_CPU_PCT:=50}"
+: "${RUNAWAY_AGE_HOURS:=4}"
+: "${RUNAWAY_OFFENDERS:=}"
+: "${KNOWN_BAD_KERNELS:=}"
+: "${FREEZE_REMOTE_LOG_CMD:=}"
+
 # --- output helpers (keep digests short — a weak model's context is scarce) ---
 sms_identity(){ printf 'bin: %s\ndescription: %s\n\n' "$0" "$1"; }
 sms_sec(){ echo "-- $1 --"; }

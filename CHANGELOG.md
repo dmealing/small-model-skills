@@ -32,6 +32,15 @@ All notable changes to this project are documented here. The format is based on
 - `claude-hooks/session-start-ambient-context.sh` — a Claude Code `SessionStart` hook that surfaces a
   `sys-diag` digest as ambient context for local-model sessions only (checks `ANTHROPIC_BASE_URL`; a
   no-op for normal cloud sessions). The AXI session-hook follow-on from the original cross-platform spec.
+- Four diagnostic skills: `ollama-doctor` (local Ollama daemon / models / VRAM-fit / CPU-spill — the
+  offline brain), `freeze-forensics` (last-freeze forensics + is the watchdog/mitigations armed;
+  Linux-primary, macOS reads panic reports), `runaway-hunter` (aged / zombie / runaway processes →
+  propose the kill), `docker-hygiene` (orphan volumes / images / build cache, compose-aware).
+- `smols` — an offline CLI catalog of installed skills (`smols` / `smols <name>` / `smols --toon`) so a
+  user *or* the local model can discover what's available without a network or digging through code. Reads
+  `SKILL.md` frontmatter + the wrappers via a new optional `x-wrappers:` key (added to every skill).
+- New cross-platform `sms_*` helpers in `bin/lib/os-{linux,macos}.sh` for the above (`sms_gpu_vram_free`,
+  `sms_watchdog_status`, `sms_procs_aged`, boot / MCE / reset-reason readers, …), kept at full parity.
 
 ### Fixed
 - `bin/lib/os-macos.sh`: `vm_stat` field-position bug (indexing from a fixed column broke once a

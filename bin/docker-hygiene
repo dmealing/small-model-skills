@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# docker-hygiene — read-only report of Docker disk waste: orphan anonymous volumes, dead/exited
+# containers, dangling images, and reclaimable build cache — while SPARING compose-managed data.
+# Proposes prunes; runs nothing. Exit: 0 ran (even if Docker is absent/down).
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_identity "Read-only: Docker disk waste — orphan volumes, dead containers, dangling images, build cache"
+
+if ! have docker; then echo "  Docker not installed — nothing to report."; exit 0; fi
+if ! docker info >/dev/null 2>&1; then
+  echo "  Docker is installed but the daemon isn't responding."
+  sms_help "Start Docker ('systemctl start docker' or launch Docker Desktop), then re-run"; exit 0
+fi
+
+sms_sec "disk usage"
+sms_line "data root" "$(docker info -f '{{.DockerRootDir}}' 2>/dev/null)"
+docker system df 2>/dev/null | sed 's/^/  /'
+
+sms_sec "orphan anonymous volumes (compose-managed data is spared)"
+orphans=0
+while read -r v; do
+  [ -n "$v" ] || continue
+  proj="$(docker volume inspect "$v" -f '{{ index .Labels "com.docker.compose.project" }}' 2>/dev/null)"
+  { [ -n "$proj" ] && [ "$proj" != "<no value>" ]; } && continue   # compose-managed -> leave it
+  echo "  $v"; orphans=$((orphans+1))
+done < <(docker volume ls -qf dangling=true 2>/dev/null)
+[ "$orphans" -eq 0 ] && echo "  (none)"
+
+sms_sec "dead / exited containers"
+dead="$(docker ps -aq --filter status=exited --filter status=dead 2>/dev/null | grep -c .)"
+sms_line "count" "$dead"
+docker ps -a --filter status=exited --filter status=dead --format '  {{.Names}}  ({{.Image}} — {{.Status}})' 2>/dev/null | head -8
+
+sms_sec "dangling images"
+dang="$(docker images -qf dangling=true 2>/dev/null | grep -c .)"
+sms_line "count" "$dang"
+
+sms_sec "verdict"
+bcache="$(docker system df --format '{{.Type}}|{{.Reclaimable}}' 2>/dev/null | awk -F'|' '$1=="Build Cache"{print $2; exit}')"
+bcache="${bcache%% (*}"
+bcache_has="$(printf '%s' "$bcache" | awk '{print (($0+0)>0)?1:0}')"
+if [ "$orphans" -gt 0 ] || [ "${dead:-0}" -gt 0 ] || [ "${dang:-0}" -gt 0 ] || [ "${bcache_has:-0}" -eq 1 ]; then
+  echo "  RECLAIMABLE — $orphans orphan volume(s), ${dead:-0} dead container(s), ${dang:-0} dangling image(s), ${bcache:-0B} build cache."
+  hints=("Review first (these delete data): 'docker container prune' + 'docker image prune'; remove the listed orphan volumes with 'docker volume rm <name>'. Do NOT 'docker volume prune' blindly — check labels first.")
+  [ "${bcache_has:-0}" -eq 1 ] && hints+=("'docker builder prune' reclaims the ${bcache} build cache (see 'docker system df' above)")
+  sms_help "${hints[@]}"
+else
+  echo "  Clean — no orphan volumes, dead containers, dangling images, or reclaimable build cache."
+fi
+exit 0

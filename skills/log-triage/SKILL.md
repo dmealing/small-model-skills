@@ -1,6 +1,7 @@
 ---
 name: log-triage
 description: Find broken services and recent errors on a Linux system via systemd and the journal. Use when a service will not start or keeps crashing, when asked what is failing or what is in the logs, or to check for recent errors. Read-only — it inspects logs and proposes next steps; it changes nothing.
+x-wrappers: [log-triage]
 ---
 
 # Log triage (what is broken / erroring?)

@@ -1,6 +1,7 @@
 ---
 name: audit-small-model-skills
 description: Audit SKILL.md skills in this project against the small-model authoring standard, using reasoning to catch issues that make skills fail on weak local models. Use when writing, reviewing, or before committing a skill here, or when asked to audit or lint skills. Read-only. Run with a capable model — the evaluation is judgment, not pattern-matching.
+x-wrappers: [skill-audit]
 ---
 
 # Audit small-model skills

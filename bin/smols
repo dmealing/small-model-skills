@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# smols — offline catalog of installed small-model-skills. Shows what you can do and how to invoke it,
+# without digging through code. Reads installed SKILL.md files + the bin/ wrappers. Read-only, no network.
+#   smols            list every skill (grouped)     smols <name>    detail for one skill
+#   smols list       same as no-arg                 smols --toon    machine-readable (for the model)
+set -uo pipefail
+SKILLS_DIR="${SMS_SKILLS_DIR:-$HOME/.claude/skills}"
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+if [ -t 1 ]; then B=$'\e[1m'; C=$'\e[36m'; G=$'\e[32m'; D=$'\e[2m'; R=$'\e[0m'; else B='' C='' G='' D='' R=''; fi
+
+# fm <file> <key> — value of a single-line frontmatter key from the first --- block
+fm(){ awk -v k="$2" '
+  /^---[[:space:]]*$/{n++; next}
+  n==1 && $0 ~ "^"k":" { sub("^"k":[[:space:]]*",""); gsub(/^["'\'']|["'\'']$/,""); print; exit }' "$1"; }
+# x-wrappers: [a, b] -> "a b"
+wrappers_of(){ fm "$1" x-wrappers | tr -d '[]' | tr ',' ' ' | xargs 2>/dev/null; }
+# one-line summary from a wrapper's header comment (line 2: "# name — desc")
+oneliner_of(){ local l s; l="$(sed -n '2p' "$1" | sed 's/^#[[:space:]]*//')"; l="${l#* — }"
+  s="${l%%. *}"; [ "$s" != "$l" ] && s="$s."; printf '%s' "$s"; }
+# bin/ wrappers not tied to any skill's x-wrappers (e.g. claude-local, smols) -> "name<TAB>desc"
+other_commands(){
+  [ -d "$BIN_DIR" ] || return 0
+  local tied="" f w b
+  for f in "$SKILLS_DIR"/*/SKILL.md; do [ -f "$f" ] && tied="$tied $(wrappers_of "$f")"; done
+  tied=" $tied "
+  for w in "$BIN_DIR"/*; do
+    { [ -f "$w" ] && [ -x "$w" ]; } || continue
+    b="$(basename "$w")"
+    case "$tied" in *" $b "*) continue ;; esac
+    printf '%s\t%s\n' "$b" "$(oneliner_of "$w")"
+  done
+}
+
+list_skills(){
+  [ -d "$SKILLS_DIR" ] || { echo "No skills dir at $SKILLS_DIR — run ./install.sh, or set SMS_SKILLS_DIR."; return 1; }
+  local found=0 f name desc wr short
+  for f in "$SKILLS_DIR"/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    name="$(fm "$f" name)"; [ -n "$name" ] || continue
+    desc="$(fm "$f" description)"; wr="$(wrappers_of "$f")"; found=1
+    short="${desc%%. *}"; [ "$short" != "$desc" ] && short="$short."
+    printf '%s%s%s\n  %s\n' "$B$C" "$name" "$R" "$short"
+    if [ -n "$wr" ]; then printf '  %sinvoke:%s say %s"use %s"%s  ·  or run  %s%s%s\n\n' "$D" "$R" "$C" "$name" "$R" "$G" "$wr" "$R"
+    else printf '  %sinvoke:%s say %s"use %s"%s\n\n' "$D" "$R" "$C" "$name" "$R"; fi
+  done
+  [ "$found" = 1 ] || { echo "No SKILL.md files found in $SKILLS_DIR."; return 1; }
+}
+
+print_others(){
+  local rows b desc; rows="$(other_commands)"
+  [ -n "$rows" ] || return 0
+  printf '%sother commands%s %s(no skill — run directly)%s\n\n' "$B" "$R" "$D" "$R"
+  while IFS="$(printf '\t')" read -r b desc; do
+    [ -n "$b" ] || continue
+    printf '%s%s%s\n  %s\n  %sinvoke:%s run  %s%s%s\n\n' "$B$C" "$b" "$R" "$desc" "$D" "$R" "$G" "$b" "$R"
+  done <<EOF
+$rows
+EOF
+}
+
+detail(){
+  local f="$SKILLS_DIR/$1/SKILL.md" name desc wr w
+  [ -f "$f" ] || { echo "No skill named '$1'. Try: smols list"; return 1; }
+  name="$(fm "$f" name)"; desc="$(fm "$f" description)"; wr="$(wrappers_of "$f")"
+  printf '%s%s%s\n\n%s\n\n' "$B$C" "$name" "$R" "$desc"
+  printf '%sInvoke%s: say %s"use %s"%s to the local model, or run a wrapper directly:\n' "$B" "$R" "$C" "$name" "$R"
+  if [ -n "$wr" ]; then for w in $wr; do printf '    %s%s%s\n' "$G" "$w" "$R"; done; else printf '    (no wrapper — this skill is prompt-only)\n'; fi
+  printf '\n%sRead-only — proposes fixes, runs nothing. Exit 0 = ran, 1 = tool failed, 2 = usage.%s\n' "$D" "$R"
+}
+
+toon(){
+  printf 'skills[%s]{name,wrappers,description}:\n' "$(find "$SKILLS_DIR" -maxdepth 2 -name SKILL.md 2>/dev/null | grep -c .)"
+  local f others; for f in "$SKILLS_DIR"/*/SKILL.md; do [ -f "$f" ] || continue
+    printf '  %s,%s,%s\n' "$(fm "$f" name)" "$(wrappers_of "$f" | tr ' ' '+')" "$(fm "$f" description | cut -c1-90 | tr ',' ';')"
+  done
+  others="$(other_commands)"
+  if [ -n "$others" ]; then
+    printf 'commands[%s]{name,description}:\n' "$(printf '%s\n' "$others" | grep -c .)"
+    printf '%s\n' "$others" | awk -F'\t' '{gsub(/,/,";",$2); printf "  %s,%s\n",$1,$2}'
+  fi
+}
+
+case "${1:-list}" in
+  list|"") printf '%ssmall-model-skills%s — say %s"use <name>"%s to the local model, or run the wrapper directly:\n\n' "$B" "$R" "$C" "$R"; list_skills && print_others ;;
+  --toon)  toon ;;
+  -h|--help) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) detail "$1" ;;
+esac

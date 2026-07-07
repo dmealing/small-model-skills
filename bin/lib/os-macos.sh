@@ -70,3 +70,23 @@ sms_df_fullest(){
 }
 sms_du_top1(){ du -x -h -d1 "$1" 2>/dev/null; }
 sms_du_summary(){ du -x -sh "$1" 2>/dev/null | cut -f1; }
+
+# --- diagnostics for ollama-doctor / freeze-forensics / runaway-hunter (macOS; degrade honestly) ---
+sms_gpu_name(){ system_profiler SPDisplaysDataType 2>/dev/null | awk -F': ' '/Chipset Model/{print $2; exit}'; }
+sms_gpu_vram_free(){ :; }        # Apple unified memory — no discrete free-VRAM figure; caller reports "unified"
+sms_gpu_vram_total(){ :; }
+sms_boot_list(){ last reboot 2>/dev/null | head -8; }
+sms_prev_boot_clean(){ return 2; }   # can't determine cleanly from here — treat as unknown
+sms_prev_boot_kernel_tail(){ local p; p="$(ls -t /Library/Logs/DiagnosticReports/*.panic 2>/dev/null | head -1)"
+  [ -n "$p" ] && { echo "panic report: $p"; tail -n "${1:-40}" "$p" 2>/dev/null; } || echo "(no panic reports found)"; }
+sms_reset_reason(){ ls -t /Library/Logs/DiagnosticReports/*.panic 2>/dev/null | head -1 | sed 's/^/last panic report: /'; }
+sms_mce_summary(){ echo "(n/a on macOS — no rasdaemon; see panic reports)"; }
+sms_watchdog_status(){ echo "modules=n/a device=n/a systemd_runtime=n/a armed=n/a (macOS manages its own watchdog)"; }
+# emit: pid age_seconds cpu mem stat comm  (macOS etime -> seconds). comm is the trailing field and
+# may contain spaces (e.g. "Google Chrome") — consumers must read it as $6..NF, not just $6.
+sms_procs_aged(){ ps -Aceo pid,etime,pcpu,pmem,stat,comm -r 2>/dev/null | tail -n +2 | awk '
+    function e2s(e,  d,p,n,s,days){ if(index(e,"-")){split(e,d,"-");days=d[1];e=d[2]}else days=0;
+      n=split(e,p,":"); if(n==3)s=p[1]*3600+p[2]*60+p[3]; else if(n==2)s=p[1]*60+p[2]; else s=p[1];
+      return days*86400+s }
+    { comm=$6; for(i=7;i<=NF;i++) comm=comm" "$i;
+      printf "%s %s %s %s %s %s\n",$1,e2s($2),$3,$4,$5,comm }'; }

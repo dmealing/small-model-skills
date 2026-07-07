@@ -27,6 +27,9 @@ best at the very start/end of context and degrades in the middle, worse for weak
   (it's a classifier the model uses to pick the skill, injected at startup). Put the *trigger* first.
   Aim ≤ ~350 chars — the listing truncates and, under budget pressure, least-used skills are dropped.
 - Read-only skills need nothing else. Any skill with side effects: see [§6](#6-safety).
+- `x-wrappers` (optional): the wrapper command(s) this skill drives, as a list — `x-wrappers: [sys-diag]`
+  (or several: `[net-diag, router-status]`). The `smols` catalog reads it to show *how to invoke* the
+  skill; omit it and the wrapper still installs but the catalog can't tie it to the skill.
 
 ## 2. Length & structure
 - **Body < 500 lines (hard). Aim < ~120 for a weak-model skill.** Front-load the load-bearing steps
@@ -52,6 +55,13 @@ best at the very start/end of context and degrades in the middle, worse for weak
 - **Say run vs. read explicitly:** "Run `net-diag`" (execute) vs "See `x.md` for the algorithm" (reference).
 - **Return short, structured output — never raw dumps.** A wrapper summarizes to a ~20-line digest with a
   verdict; it does not pipe a full `journalctl`/`df`/log into context (floods the attention budget).
+- **No-overclaim verdicts.** A verdict MUST NOT assert one definitive conclusion when the right reading
+  depends on context the wrapper can't know (is a GPU *expected*, is this process *supposed* to run, is the
+  watchdog actually being *petted*). State the facts plus the clearly-labeled alternatives and flag the
+  uncertainty, so the small model makes the final contextual call between labeled options instead of acting
+  on a confidently-wrong verdict. E.g. no discrete GPU → "models run on CPU (expected on a CPU-only box)",
+  not "CPU SPILL — free VRAM"; a `/dev/watchdog` node with nothing petting it → "armed=no — may NOT
+  auto-reboot", not "protected."
 - **Scripts solve, not punt:** handle their own errors with specific messages; no unexplained magic numbers.
 - **Cross-platform primitives:** never call an OS-specific command directly (`nproc`, `ip`, `systemctl`,
   GNU-flavored `ps`/`df`/`du` flags, …) — call the `sms_*` helper in `bin/lib/common.sh` instead

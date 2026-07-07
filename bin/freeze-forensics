@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# freeze-forensics — read-only reconstruction of the LAST hard freeze / unclean reboot, plus a check
+# that the anti-freeze mitigations are still armed (watchdog claimed, kernel cmdline flags intact).
+# Linux/WSL-primary; on macOS it degrades to reading panic reports. Changes nothing.
+# Exit: 0 ran (even if it found a freeze trace), 1 couldn't read any boot history.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_identity "Read-only: last-freeze forensics + whether the watchdog / anti-freeze mitigations are still armed"
+
+sms_sec "boots"
+boots="$(sms_boot_list)"
+if [ -z "$boots" ] && [ "$SMS_OS" != macos ]; then
+  echo "verdict: FAILED — no boot history (journalctl unavailable or no persistent journal)"
+  sms_help "Set Storage=persistent in /etc/systemd/journald.conf so future freezes are captured across reboots"
+  exit 1
+fi
+printf '%s\n' "$boots" | tail -6 | sed 's/^/  /'
+nboots="$(printf '%s\n' "$boots" | grep -c .)"
+
+sms_sec "previous boot — did it end cleanly?"
+sms_prev_boot_clean; pc=$?
+case "$pc" in
+  0) sms_line "prev shutdown" "CLEAN — the last session logged a normal shutdown/reboot" ;;
+  1) sms_line "prev shutdown" "ABRUPT — no clean-shutdown marker (freeze, panic, or power loss)" ;;
+  *) sms_line "prev shutdown" "unknown (can't determine on this system)" ;;
+esac
+rr="$(sms_reset_reason)"; [ -n "$rr" ] && sms_line "reset reason" "$rr"
+panic=0; case "$rr" in *"panic report"*) panic=1 ;; esac
+
+if [ "$pc" != 0 ]; then
+  ktail="$(sms_prev_boot_kernel_tail 30 | tail -12)"
+  if [ -n "$ktail" ]; then
+    sms_sec "previous boot — last kernel lines / panic report (look for the freeze signature)"
+    printf '%s\n' "$ktail" | sed 's/^/  /'
+  fi
+fi
+
+sms_sec "hardware errors"
+mce="$(sms_mce_summary)"; printf '%s\n' "${mce:-(none found)}" | head -6 | sed 's/^/  /'
+
+sms_sec "watchdog (auto-reboot on freeze) — is it actually armed?"
+wd="$(sms_watchdog_status)"; sms_line "watchdog" "$wd"
+case "$wd" in
+  *device=none*) sms_help "No /dev/watchdog exists — a freeze will hang indefinitely instead of auto-rebooting. Arm a hardware watchdog (e.g. sp5100_tco/iTCO) or systemd RuntimeWatchdogSec." ;;
+  *armed=no*)    sms_help "A /dev/watchdog exists but nothing appears to be petting it (RuntimeWatchdogSec unset, no watchdog daemon) — a freeze may NOT auto-reboot. Arm it via RuntimeWatchdogSec= in /etc/systemd/system.conf or a watchdog daemon." ;;
+esac
+
+sms_sec "mitigations / kernel"
+kern="$(uname -r 2>/dev/null)"; sms_line "running kernel" "${kern:-?}"
+cmd="$(tr ' ' '\n' < /proc/cmdline 2>/dev/null | grep -iE 'cgroup_disable|mitigations|nowatchdog|pcie_aspm|amd_iommu|nomodeset' | paste -sd' ' -)"
+sms_line "notable cmdline" "${cmd:-<none>}"
+for kb in $KNOWN_BAD_KERNELS; do
+  case "$kern" in *"$kb"*) echo "  WARNING: running kernel matches a known-bad entry from config ($kb)";; esac
+done
+
+if [ -n "$FREEZE_REMOTE_LOG_CMD" ]; then
+  sms_sec "remote black-box log"
+  eval "$FREEZE_REMOTE_LOG_CMD" 2>/dev/null | tail -15 | sed 's/^/  /' || echo "  (remote log command failed)"
+fi
+
+sms_sec "verdict"
+if [ "$pc" = 1 ]; then
+  echo "  LAST SESSION ENDED ABRUPTLY — treat it as a freeze/panic. The kernel tail + hardware errors above are the best clues."
+  sms_help "Match the kernel tail to a known signature, and confirm the watchdog line above shows armed=yes so the NEXT freeze auto-reboots"
+elif [ "$pc" = 0 ]; then
+  echo "  No freeze on record — the last shutdown was clean."
+  sms_help "Good moment to confirm the watchdog line above shows armed=yes (something is actually petting it)"
+elif [ "${panic:-0}" = 1 ]; then
+  echo "  PANIC REPORT FOUND — the last shutdown was NOT clean; a kernel panic is on record (the panic report + kernel tail above are the definitive evidence)."
+  sms_help "Match the panic report / kernel tail above to a known signature; the reset-reason line points at the exact .panic file to open"
+elif [ "${nboots:-0}" -le 1 ]; then
+  echo "  LIMITED HISTORY — only the current boot is in the journal, so the previous session can't be reconstructed here."
+  sms_help "Enable a persistent journal and/or a netconsole black-box (FREEZE_REMOTE_LOG_CMD) to capture the next freeze; the watchdog + cmdline mitigations above still show whether you're protected right now"
+else
+  echo "  Inconclusive — couldn't classify the last shutdown; review the sections above."
+fi
+exit 0

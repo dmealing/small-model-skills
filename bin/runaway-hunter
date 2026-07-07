@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# runaway-hunter — read-only hunt for aged + high-CPU, zombie/wedged, or known-offender processes (the
+# classic freeze precursors) and PROPOSE the right kill. Runs nothing. Companion to system-triage: adds
+# the AGE dimension + zombie/uninterruptible detection a one-shot snapshot lacks.
+# Exit: 0 ran (even if it found something), 1 couldn't read the process table.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+sms_identity "Read-only: aged/high-CPU/zombie/known-offender processes + proposed kills (runs nothing)"
+
+age_limit=$(( RUNAWAY_AGE_HOURS * 3600 ))
+rows="$(sms_procs_aged)"
+[ -n "$rows" ] || { echo "verdict: FAILED — could not read the process table"; exit 1; }
+sms_line "thresholds" "cpu > ${RUNAWAY_CPU_PCT}%  AND  age > ${RUNAWAY_AGE_HOURS}h"
+
+sms_sec "runaway candidates (high CPU AND aged)"
+runaway="$(printf '%s\n' "$rows" | awk -v c="$RUNAWAY_CPU_PCT" -v a="$age_limit" '$3+0>c && $2+0>a')"
+if [ -n "$runaway" ]; then
+  printf '%s\n' "$runaway" | awk '{comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i; h=int($2/3600); printf "%s,%s,%.0f%%,%.0f%%,%s,%sh\n",$1,comm,$3,$4,$5,h}' \
+    | sms_toon runaway pid,comm,cpu,mem,stat,age
+else
+  echo "  (none — no process is both hot and long-running)"
+fi
+
+sms_sec "zombie / wedged (Z = defunct, D/U = uninterruptible)"
+# state is the first char of stat: Z zombie; D (Linux) / U (macOS) uninterruptible
+wedged="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1); comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} s=="Z"||s=="D"||s=="U" {printf "%s,%s,%s\n",$1,comm,$5}')"
+if [ -n "$wedged" ]; then printf '%s\n' "$wedged" | sms_toon wedged pid,comm,stat; else echo "  (none)"; fi
+
+offenders=""
+pat="$(printf '%s' "$RUNAWAY_OFFENDERS" | xargs | tr ' ' '|')"
+if [ -n "$pat" ]; then
+  sms_sec "known offenders (from RUNAWAY_OFFENDERS)"
+  offenders="$(printf '%s\n' "$rows" | awk -v p="$pat" '{comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} comm ~ p {h=int($2/3600); printf "%s,%s,%.0f%%,%sh\n",$1,comm,$3,h}')"
+  if [ -n "$offenders" ]; then printf '%s\n' "$offenders" | sms_toon offenders pid,comm,cpu,age; else echo "  (none running)"; fi
+fi
+
+sms_sec "verdict"
+if [ -n "$runaway" ]; then
+  echo "  RUNAWAY — a process is pegging a core for hours (a classic freeze precursor)."
+  sms_help "Inspect first: 'ps -fp <pid>'. If safe to stop: 'kill <pid>', then only if it ignores that, 'kill -9 <pid>'. Never kill something mid-write."
+elif [ -n "$offenders" ]; then
+  echo "  KNOWN OFFENDER(S) RUNNING — one or more processes match your RUNAWAY_OFFENDERS watch-list; check their cpu/age in the offenders table above (they may be idle or short-lived) before deciding to kill."
+  sms_help "Inspect first: 'ps -fp <pid>'. If it's genuinely stuck or hot, 'kill <pid>', then only if it ignores that, 'kill -9 <pid>'. Never kill something mid-write."
+elif [ -n "$wedged" ]; then
+  echo "  WEDGED/ZOMBIE present — a lone zombie is usually harmless (its parent will reap it); a pile-up, or a D/U-state process, points at a stuck driver or mount."
+  sms_help "Zombies: inspect the PARENT ('ps -o ppid= -p <pid>' then 'ps -fp <ppid>') — reaping/restarting the parent clears them. Never 'kill -9' a D/U-state process; find what it's blocked on instead."
+else
+  echo "  Nominal — nothing hot-and-aged, no zombies, no known offenders. If it still feels slow, run system-triage or disk-report."
+fi
+exit 0
