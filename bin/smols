@@ -38,13 +38,13 @@ list_skills(){
   for f in "$SKILLS_DIR"/*/SKILL.md; do
     [ -f "$f" ] || continue
     name="$(fm "$f" name)"; [ -n "$name" ] || continue
-    desc="$(fm "$f" description)"; wr="$(wrappers_of "$f")"; found=1
+    wr="$(wrappers_of "$f")"; [ -n "$wr" ] || continue   # small-model-skills declare x-wrappers; skip other installed skills
+    desc="$(fm "$f" description)"; found=1
     short="${desc%%. *}"; [ "$short" != "$desc" ] && short="$short."
     printf '%s%s%s\n  %s\n' "$B$C" "$name" "$R" "$short"
-    if [ -n "$wr" ]; then printf '  %sinvoke:%s say %s"use %s"%s  ·  or run  %s%s%s\n\n' "$D" "$R" "$C" "$name" "$R" "$G" "$wr" "$R"
-    else printf '  %sinvoke:%s say %s"use %s"%s\n\n' "$D" "$R" "$C" "$name" "$R"; fi
+    printf '  %sinvoke:%s say %s"use %s"%s  ·  or run  %s%s%s\n\n' "$D" "$R" "$C" "$name" "$R" "$G" "$wr" "$R"
   done
-  [ "$found" = 1 ] || { echo "No SKILL.md files found in $SKILLS_DIR."; return 1; }
+  [ "$found" = 1 ] || { echo "No small-model-skills found in $SKILLS_DIR (they carry an x-wrappers: key). Run ./install.sh?"; return 1; }
 }
 
 print_others(){
@@ -70,9 +70,12 @@ detail(){
 }
 
 toon(){
-  printf 'skills[%s]{name,wrappers,description}:\n' "$(find "$SKILLS_DIR" -maxdepth 2 -name SKILL.md 2>/dev/null | grep -c .)"
-  local f others; for f in "$SKILLS_DIR"/*/SKILL.md; do [ -f "$f" ] || continue
-    printf '  %s,%s,%s\n' "$(fm "$f" name)" "$(wrappers_of "$f" | tr ' ' '+')" "$(fm "$f" description | cut -c1-90 | tr ',' ';')"
+  local f wr n=0 others
+  for f in "$SKILLS_DIR"/*/SKILL.md; do [ -f "$f" ] && [ -n "$(wrappers_of "$f")" ] && n=$((n+1)); done
+  printf 'skills[%s]{name,wrappers,description}:\n' "$n"
+  for f in "$SKILLS_DIR"/*/SKILL.md; do [ -f "$f" ] || continue
+    wr="$(wrappers_of "$f")"; [ -n "$wr" ] || continue
+    printf '  %s,%s,%s\n' "$(fm "$f" name)" "$(printf '%s' "$wr" | tr ' ' '+')" "$(fm "$f" description | cut -c1-90 | tr ',' ';')"
   done
   others="$(other_commands)"
   if [ -n "$others" ]; then

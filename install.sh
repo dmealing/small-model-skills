@@ -49,7 +49,9 @@ echo "linked $n wrappers into $BINDIR"
 # 3. install skills
 mkdir -p "$SKILLS"
 if compgen -G "$SRC/skills/*/" >/dev/null; then
-  for d in "$SRC"/skills/*/; do cp -a "$d" "$SKILLS/$(basename "$d")"; done
+  # rm the dest first: 'cp -a src dest' when dest already exists nests it (dest/src) instead of
+  # overwriting, which silently keeps a stale SKILL.md on re-install. Remove, then copy fresh.
+  for d in "$SRC"/skills/*/; do dst="$SKILLS/$(basename "$d")"; rm -rf "$dst"; cp -a "$d" "$dst"; done
   echo "installed skills: $(ls "$SRC/skills" | tr '\n' ' ')"
 else
   echo "(no skills/ to install yet)"
