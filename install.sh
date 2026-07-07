@@ -66,9 +66,23 @@ if compgen -G "$SRC/skills/*/" >/dev/null; then
   rm -f "$CC_HOME"/skills/* 2>/dev/null || true
   # symlink each SMS skill so it stays in sync with the installed copy
   for d in "$SRC"/skills/*/; do n="$(basename "$d")"; ln -sfn "$SKILLS/$n" "$CC_HOME/skills/$n"; done
-  # seed onboarding/theme so Claude Code doesn't re-prompt in this separate config home
-  [ -f "$HOME/.claude.json" ] && [ ! -f "$CC_HOME/.claude.json" ] && cp "$HOME/.claude.json" "$CC_HOME/.claude.json" 2>/dev/null || true
-  [ -f "$HOME/.claude/settings.json" ] && cp "$HOME/.claude/settings.json" "$CC_HOME/settings.json" 2>/dev/null || true
+  # Seed a credential-free, MCP-free minimal .claude.json so Claude Code doesn't re-prompt onboarding/theme
+  # in this separate config home. Do NOT copy ~/.claude.json wholesale: it carries oauthAccount (credentials),
+  # mcpServers (cloud servers curated/offline mode must not start), and projects (per-project trust/history).
+  # Strip those with jq, keeping the onboarding/theme flags; fall back to '{}' when jq is absent or the parse
+  # fails. chmod 600 the result — its source is 600 and a plain cp under a lax umask would widen it.
+  if [ -f "$HOME/.claude.json" ] && [ ! -f "$CC_HOME/.claude.json" ]; then
+    if command -v jq >/dev/null 2>&1 \
+       && jq 'del(.oauthAccount, .mcpServers, .projects, .history)' "$HOME/.claude.json" > "$CC_HOME/.claude.json" 2>/dev/null; then
+      :
+    else
+      printf '{}' > "$CC_HOME/.claude.json"
+    fi
+    chmod 600 "$CC_HOME/.claude.json"
+  fi
+  if [ -f "$HOME/.claude/settings.json" ] && cp "$HOME/.claude/settings.json" "$CC_HOME/settings.json" 2>/dev/null; then
+    chmod 600 "$CC_HOME/settings.json"
+  fi
   echo "curated skills home: $CC_HOME ($(ls "$CC_HOME/skills" 2>/dev/null | wc -l) skills for claude-local)"
 fi
 
