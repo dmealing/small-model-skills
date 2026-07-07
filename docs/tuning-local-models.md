@@ -82,6 +82,12 @@ So skill **count** barely matters (0 vs 10 ≈ identical) — but a few **verbos
 curated config home (`install.sh` builds it) that exposes **only these skills** — a ~5% context trim plus a
 smaller tool surface. Opt out with `SMS_CURATED_SKILLS=0`.
 
+**Trade-off — it relocates the whole config root.** Pointing `CLAUDE_CONFIG_DIR` at the curated home moves
+Claude Code's entire config root, so your global `~/.claude` context — `CLAUDE.md` directives, custom
+`agents/`, and `commands/` — does **not** load in curated mode. That is deliberate: a weak model does better
+with a small, clean context than with your full frontier-model setup. Set `SMS_CURATED_SKILLS=0` to run
+against the full `~/.claude` config instead.
+
 <a name="5-thinking"></a>
 ## 5. Thinking on/off: a trap — it doesn't apply through Claude Code
 
