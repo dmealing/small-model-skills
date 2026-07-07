@@ -29,19 +29,23 @@ sms_sec "files with a matching NAME"
 if [ -n "$FD" ]; then
   names="$(sms_timeout "$NT" "$FD" -i -H -I -F -t f -E .git -E node_modules -E .cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; nrc=$?
 else
-  # find fallback: case-insensitive literal name glob, skip the usual noise dirs
+  # find fallback: case-insensitive LITERAL name match. Escape glob metachars (\ * ? [ ]) in the query so
+  # they match themselves like fd/rg/grep's -F — otherwise 'array[0]' or 'test*' would be a glob. Then
+  # skip the usual noise dirs.
+  qg="$(printf '%s' "$q" | sed -e 's/\\/\\\\/g' -e 's/\*/\\*/g' -e 's/?/\\?/g' -e 's/\[/\\[/g' -e 's/\]/\\]/g')"
   names="$(sms_timeout "$NT" find "$path" \( -name .git -o -name node_modules -o -name .cache \) -prune -o \
-           -type f -iname "*$q*" -print 2>/dev/null | head -"$MAX")"; nrc=$?
+           -type f -iname "*$qg*" -print 2>/dev/null | head -"$MAX")"; nrc=$?
 fi
 printf '%s\n' "$names" | grep -v '^$' | sms_toon name_matches path
 
 sms_sec "files whose CONTENTS match"
 # -F: literal query. --no-ignore/--hidden: search gitignored + hidden files too; prune
-# .git/node_modules/.cache (same noise dirs as the name search + find fallback).
+# .git/node_modules/.cache (same noise dirs as the name search + find fallback). -I (grep) skips binary
+# files, matching rg -l's default so a compiled binary embedding the query isn't listed as a hit.
 if have rg; then
   content="$(sms_timeout "$CT" rg -l -i -F --hidden --no-ignore --no-messages -g '!.git' -g '!node_modules' -g '!.cache' -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
 else
-  content="$(sms_timeout "$CT" grep -rliF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
+  content="$(sms_timeout "$CT" grep -rlIiF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
 fi
 printf '%s\n' "$content" | grep -v '^$' | sms_toon content_matches path
 

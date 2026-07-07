@@ -53,6 +53,7 @@ sms_help \
   "package caches: sudo apt clean | pip cache purge | npm cache clean --force | brew cleanup" \
   "journal/log vacuuming: sudo journalctl --vacuum-size=200M (Linux) or manage /var/log manually (macOS)" \
   "docker (confirm first): docker system prune   (removes UNUSED images/containers/networks)" \
+  "docker container logs: 'docker system df'/prune do NOT count json-file logs — if Docker is a suspect, check du -sh /var/lib/docker/containers/*/*-json.log and rotate/truncate the big ones" \
   "biggest files: find \"$target\" -xdev -type f -size +100M -exec ls -lh {} \; 2>/dev/null | sort -k5 -rh | head"
 echo "  Do NOT delete anything the user has not confirmed is safe."
 exit 0
