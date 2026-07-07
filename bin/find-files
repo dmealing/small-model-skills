@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # find-files — read-only search for files by NAME and by CONTENT. Prefers ripgrep/fd; falls back to
-# grep/find. Bounded (time + result cap) so a big tree can't hang it. Changes nothing.
+# grep/find. Result-capped, and time-bounded where timeout/gtimeout (coreutils) exists — otherwise it runs
+# uncapped and prints a one-line note. Changes nothing.
 # The query is a LITERAL substring (not a regex): dots, brackets, etc. match themselves.
 # Usage: find-files <query> [path]     (path default: $SEARCH_ROOT from config, else the current dir)
 # Exit: 0 ran (matches or not), 2 usage error.
@@ -18,6 +19,9 @@ NT="${SEARCH_NAME_TIMEOUT:-15}"
 CT="${SEARCH_CONTENT_TIMEOUT:-20}"
 # a name-search binary: fd (or fdfind on Debian/Ubuntu), else find
 FD=""; have fd && FD=fd; [ -z "$FD" ] && have fdfind && FD=fdfind
+# Warn from here (parent) if no timeout binary caps the searches below — sms_timeout's own note is hushed
+# by the 2>/dev/null on each search invocation, so surface the honesty note where stderr reaches the user.
+sms_timeout_warn
 
 sms_line "query" "$q"
 sms_line "path"  "$path"

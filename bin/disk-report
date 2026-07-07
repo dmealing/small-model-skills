@@ -18,6 +18,9 @@ printf '%s\n' "$fs" | awk 'NR==1||/%/{print "  "$0}' | head -14
 
 target=$(sms_df_fullest)
 target="${target:-/}"
+# Warn from here (parent) if no timeout binary caps the du walks below — sms_du_*'s 2>/dev/null hushes
+# sms_timeout's own note, so surface the honesty note where stderr reaches the user.
+sms_timeout_warn
 sms_sec "biggest dirs one level under $target"
 # Capture du's exit code separately: du -d1 can flush PARTIAL subtree totals before sms_timeout kills it,
 # so an empty result isn't the only timeout signal — a truncated, mis-rankable list can print too.

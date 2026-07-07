@@ -25,4 +25,6 @@ mentions `API_KEY`", "find the notes about the router."
    `grep -ni '<query>' <file>`) — don't dump whole files into your reply.
 4. Report the matching paths and the single most likely file. Never open, edit, or delete a file yourself.
 
-Read-only: `find-files` only searches (name + content) and is time-bounded so a large tree can't hang it.
+Read-only: `find-files` only searches (name + content). It is time-bounded where `timeout`/`gtimeout`
+(coreutils) is available, so a large tree can't hang it; on a host with neither (e.g. stock macOS), it runs
+uncapped and prints a one-line note that the search is not time-bounded.
