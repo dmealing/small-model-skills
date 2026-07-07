@@ -165,6 +165,12 @@ for a 70B+ model** — picking one requires spelling out the full Ollama tag
 (`claude-local llama3.3:70b`), not a single memorable word, because loading a model that size is a real
 resource commitment on a laptop (it's taken this machine down before).
 
+By default it also runs **curated-skills mode**: `CLAUDE_CONFIG_DIR` is repointed at a config home
+(`install.sh`-built) exposing only this repo's skills, trading away the global `~/.claude` context
+(`CLAUDE.md`, custom `agents/`/`commands/`) for a smaller, cleaner context a weak model handles better.
+Opt out with `SMS_CURATED_SKILLS=0`; measured rationale in
+[`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
+
 ## Roadmap
 
 - v1: the catalog above, SonicWall router module, Doug's machine as first consumer.
