@@ -15,7 +15,10 @@ Find where disk space went. Read-only — NEVER delete anything.
 
 ## Runbook
 1. Run `disk-report`. Read the filesystem table (which mount is full), the biggest directories, and the
-   common space hogs.
+   common space hogs. On a very large filesystem the size walk is time-bounded and may report
+   `too large — timed out` or a `PARTIAL` (possibly mis-ranked) list — say so honestly rather than
+   treating it as "nothing found"; you can propose raising `SMS_DU_TIMEOUT` and re-running, and still lean
+   on the common hogs plus the biggest-files command in the verdict.
 2. Identify where the space concentrates — a specific directory, package caches, docker, logs, or /tmp.
 3. Report the top two or three space consumers with their sizes.
 4. PROPOSE safe reclamation for the user to run (the wrapper lists candidates: package caches, journal

@@ -46,6 +46,16 @@ All notable changes to this project are documented here. The format is based on
   `SKILL.md` frontmatter + the wrappers via a new optional `x-wrappers:` key (added to every skill).
 - New cross-platform `sms_*` helpers in `bin/lib/os-{linux,macos}.sh` for the above (`sms_gpu_vram_free`,
   `sms_watchdog_status`, `sms_procs_aged`, boot / MCE / reset-reason readers, …), kept at full parity.
+- `file-search` skill + `find-files` wrapper — a read-only search for "find that file / where is X
+  configured / which file mentions Y." Searches file **names** (fd → fdfind → find) and **contents**
+  (ripgrep → grep) for a literal substring, including gitignored and hidden files (pruning only
+  `.git`/`node_modules`/`.cache`), result-capped and time-bounded so a big tree can't hang it. Distinguishes
+  a real "no matches" from a time-cutoff. Config `SEARCH_ROOT`/`SEARCH_MAX`/`SEARCH_NAME_TIMEOUT`/
+  `SEARCH_CONTENT_TIMEOUT`. Only searches — never opens, edits, or deletes.
+- `sms_timeout` / `sms_timeout_warn` / `sms_is_timeout` helpers in `bin/lib/common.sh` — a portable
+  wall-clock cap (via `timeout`/`gtimeout`; degrades to uncapped with a one-line stderr note where neither
+  exists) so a slow tool (`du` over a huge tree, a wedged mount/daemon) can't hang a wrapper. Exit
+  124/137/143 means killed for time.
 
 ### Changed
 - The model recipe ships `num_ctx 65536`. Claude Code's system prompt + tool/skill defs are ~27–30K tokens,
@@ -80,3 +90,11 @@ All notable changes to this project are documented here. The format is based on
   guards flags/empty).
 - `install.sh`: the final hint still told users to set up a `freeclaude` launcher; it now points at
   `claude-local`, which the installer itself puts on PATH.
+- `disk-report` hit Claude Code's 180s tool timeout with **blank** output on large filesystems — `du -x -d1`
+  over a full tree (plus unbounded `du` on hogs like `/var/lib/docker`) walked the whole thing. The `du`
+  walks are now time-bounded via `sms_timeout` (`SMS_DU_TIMEOUT`=20s for the biggest-dirs walk,
+  `SMS_DU_HOG_TIMEOUT`=8s per hog) and `docker system df` is capped (`SMS_DOCKER_TIMEOUT`=8s); on a timeout
+  the report says "too large — timed out" / "PARTIAL" honestly instead of hanging or printing blanks.
+  Dropped the redundant `/var/lib/docker` du (`docker system df` already reports it) and added a
+  container-json-log hint to the cleanup candidates. A 1.8T-used box went from a 180s timeout with no output
+  to ~66s with full biggest-dirs + hogs output.

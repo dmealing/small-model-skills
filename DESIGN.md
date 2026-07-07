@@ -73,6 +73,11 @@ LICENSE              MIT
 | `disk-report` | `disk-report` | "why is my disk full?" (biggest dirs/files, caches, docker, logs) |
 | `log-service-triage` | `log-triage` | "what service is broken / what's in the logs?" (failed units, recent errors) |
 
+**Search** (read-only; locate a file, not triage):
+| Skill | Wrapper | Answers |
+|---|---|---|
+| `file-search` | `find-files` | "where is that file / where is X configured?" — find by name + content (ripgrep/fd, falls back to grep/find), result-capped and time-bounded |
+
 **Offline-dev** (the plane case):
 | Skill | Wrapper | Does |
 |---|---|---|
