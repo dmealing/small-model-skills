@@ -78,6 +78,11 @@ portability bugs the macOS port surfaced along the way.
 | `runaway-hunter` | what's pegged the CPU for hours? aged / zombie / runaway processes → propose the kill |
 | `docker-hygiene` | Docker eating disk? orphan volumes / images / build cache, compose-aware |
 
+**Search** (read-only; find a file, don't triage):
+| Skill | Answers |
+|---|---|
+| `file-search` | where's that file? find by name or content (`find-files`; ripgrep/fd, falls back to grep/find) |
+
 **Offline-dev** (the plane case):
 | Skill | Does |
 |---|---|

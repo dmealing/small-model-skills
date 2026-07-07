@@ -3,6 +3,26 @@
 # Sourced by every bin/ wrapper. Read-only; defines no side effects beyond loading config.
 
 have(){ command -v "$1" >/dev/null 2>&1; }
+# sms_timeout <seconds> <cmd...> — run an EXTERNAL command with a wall-clock cap so a slow tool (a `du`
+# over a huge tree, a hung mount) can't hang a wrapper past the model's patience. Uses timeout/gtimeout
+# where available; degrades to running uncapped if neither is present. Exit 124 = it was killed for time.
+sms_timeout(){ local s="$1"; shift
+  if have timeout; then command timeout "$s" "$@"
+  elif have gtimeout; then command gtimeout "$s" "$@"
+  else sms_timeout_warn; "$@"; fi; }
+# sms_timeout_warn — one-time stderr note that this host has neither timeout nor gtimeout, so sms_timeout
+# can't enforce a wall-clock cap and a huge tree runs uncapped. Call it from a wrapper's PARENT context:
+# the real callers redirect sms_timeout's own stderr to /dev/null (to hush the wrapped tool), so a note
+# printed from inside sms_timeout is swallowed there. Prints at most once per process via the sentinel.
+sms_timeout_warn(){
+  { have timeout || have gtimeout; } && return 0
+  [ -n "${_SMS_NO_TIMEOUT_WARNED:-}" ] && return 0
+  _SMS_NO_TIMEOUT_WARNED=1
+  echo "note: no timeout/gtimeout found — search/du not time-bounded on this host (install coreutils for gtimeout on macOS)" >&2
+}
+# sms_is_timeout <exit-code> — true if a command was killed by sms_timeout for running past its cap.
+# 124 = GNU/coreutils timeout; 143 = 128+SIGTERM (BusyBox timeout); 137 = 128+SIGKILL.
+sms_is_timeout(){ case "${1:-}" in 124|137|143) return 0 ;; *) return 1 ;; esac; }
 sms_human(){ awk -v b="${1:-0}" 'BEGIN{split("B KB MB GB TB PB",u," "); i=1; while(b>=1024 && i<6){b/=1024;i++} printf (i==1?"%d %s":"%.1f %s"), b, u[i]}'; }
 
 # --- OS detection (WSL2 counts as linux; override SMS_OS=linux|macos for manual testing) ---

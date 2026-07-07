@@ -18,18 +18,45 @@ printf '%s\n' "$fs" | awk 'NR==1||/%/{print "  "$0}' | head -14
 
 target=$(sms_df_fullest)
 target="${target:-/}"
+# Warn from here (parent) if no timeout binary caps the du walks below — sms_du_*'s 2>/dev/null hushes
+# sms_timeout's own note, so surface the honesty note where stderr reaches the user.
+sms_timeout_warn
 sms_sec "biggest dirs one level under $target"
-sms_du_top1 "$target" | sort -rh -k1 | head -12 \
-  | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}' | sms_toon dirs size,path
+# Capture du's exit code separately: du -d1 can flush PARTIAL subtree totals before sms_timeout kills it,
+# so an empty result isn't the only timeout signal — a truncated, mis-rankable list can print too.
+raw="$(sms_du_top1 "$target")"; drc=$?
+dirs=""
+[ -n "$raw" ] && dirs="$(printf '%s\n' "$raw" | sort -rh -k1 | head -12 | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}')"
+if [ -n "$dirs" ]; then
+  sms_is_timeout "$drc" && echo "  (PARTIAL — du was cut off by the ${SMS_DU_TIMEOUT:-20}s time limit before finishing;" \
+    "this ranking is INCOMPLETE and may be mis-ranked. Raise SMS_DU_TIMEOUT to try harder.)"
+  printf '%s\n' "$dirs" | sms_toon dirs size,path
+elif sms_is_timeout "$drc"; then
+  echo "  (the tree under $target was too large to size within the time limit — see common hogs + the"
+  echo "   biggest-files command in the verdict below; raise SMS_DU_TIMEOUT to try harder)"
+else
+  echo "  (nothing sizable found one level under $target, or it was not readable)"
+fi
 
 sms_sec "common space hogs"
+# /var/lib/docker is intentionally NOT du'd here — it's slow and 'docker system df' below reports it exactly.
 hog_rows=""
-for d in /var/log "$HOME/.cache" /var/cache /var/lib/docker /tmp; do
-  [ -d "$d" ] && hog_rows="${hog_rows}$(sms_du_summary "$d"),$d
+for d in /var/log "$HOME/.cache" /var/cache /tmp; do
+  [ -d "$d" ] || continue
+  sz="$(sms_du_summary "$d")"; [ -n "$sz" ] || sz="(too large — timed out)"
+  hog_rows="${hog_rows}${sz},$d
 "
 done
 printf '%s' "$hog_rows" | grep -v '^$' | sms_toon common_hogs size,path
-have docker && sms_line "docker reclaimable" "$(docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"
+# 'docker system df' queries the daemon — cap it like the du walks so a wedged daemon can't hang the report.
+if have docker; then
+  dkr="$(sms_timeout "${SMS_DOCKER_TIMEOUT:-8}" docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"; dkrc=$?
+  if sms_is_timeout "$dkrc"; then
+    sms_line "docker reclaimable" "(timed out — daemon may be wedged)"
+  else
+    sms_line "docker reclaimable" "$dkr"
+  fi
+fi
 
 sms_sec "verdict"
 echo "  Space concentration is shown above. Safe things a human can reclaim after confirming:"
@@ -37,6 +64,7 @@ sms_help \
   "package caches: sudo apt clean | pip cache purge | npm cache clean --force | brew cleanup" \
   "journal/log vacuuming: sudo journalctl --vacuum-size=200M (Linux) or manage /var/log manually (macOS)" \
   "docker (confirm first): docker system prune   (removes UNUSED images/containers/networks)" \
+  "docker container logs: 'docker system df'/prune do NOT count json-file logs — if Docker is a suspect, check du -sh /var/lib/docker/containers/*/*-json.log and rotate/truncate the big ones" \
   "biggest files: find \"$target\" -xdev -type f -size +100M -exec ls -lh {} \; 2>/dev/null | sort -k5 -rh | head"
 echo "  Do NOT delete anything the user has not confirmed is safe."
 exit 0

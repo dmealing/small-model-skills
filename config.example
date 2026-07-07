@@ -39,3 +39,14 @@ RUNAWAY_AGE_HOURS=4                 # ... AND running longer than this many hour
 RUNAWAY_OFFENDERS=                  # extra comm/name patterns to always flag, space-separated (e.g. "bun pop-upgrade")
 KNOWN_BAD_KERNELS=                  # freeze-forensics: kernel versions to warn about, space-separated (blank = none)
 FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log (host-specific; blank = off)
+
+# --- File search (file-search skill / find-files) ---
+SEARCH_ROOT=            # default dir to search when none is given (blank = current dir; e.g. set to $HOME)
+SEARCH_MAX=20           # cap results per section (names / contents)
+# SEARCH_NAME_TIMEOUT=15    # seconds before the file-NAME search is cut off (verdict says so; raise to try harder)
+# SEARCH_CONTENT_TIMEOUT=20 # seconds before the file-CONTENT search is cut off
+
+# --- Disk report (disk-report skill) ---
+# SMS_DU_TIMEOUT=20       # seconds to spend sizing the biggest dirs one level under the fullest filesystem
+# SMS_DU_HOG_TIMEOUT=8    # seconds per common hog dir (/var/log, ~/.cache, /var/cache, /tmp)
+# SMS_DOCKER_TIMEOUT=8    # seconds for 'docker system df' (bounded so a wedged daemon can't hang the report)
