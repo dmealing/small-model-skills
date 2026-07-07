@@ -7,14 +7,20 @@ gemini-judgments.{json,jsonl} and reasons-by-model.md next to this script.
 
 Usage: python3 judge.py [results.jsonl]
 """
-import json, os, re, sys, subprocess, urllib.request, concurrent.futures
+import json
+import os
+import re
+import sys
+import subprocess
+import urllib.request
+import concurrent.futures
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TASKS = {t["id"]: t for t in json.load(open(f"{HERE}/tasks-hard.json"))}
 RESULTS_FILE = sys.argv[1] if len(sys.argv) > 1 else f"{HERE}/results.jsonl"
 # output fields contain raw newlines; jq -c . emits one clean record per line
-RESULTS = [json.loads(l) for l in subprocess.check_output(
-    ["jq", "-c", ".", RESULTS_FILE]).decode().splitlines() if l.strip()]
+RESULTS = [json.loads(line) for line in subprocess.check_output(
+    ["jq", "-c", ".", RESULTS_FILE]).decode().splitlines() if line.strip()]
 def _gemini_key():
     k = os.environ.get("GEMINI_API_KEY", "").strip()
     if k:
