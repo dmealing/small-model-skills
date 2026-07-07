@@ -10,6 +10,9 @@ sms_timeout(){ local s="$1"; shift
   if have timeout; then command timeout "$s" "$@"
   elif have gtimeout; then command gtimeout "$s" "$@"
   else "$@"; fi; }
+# sms_is_timeout <exit-code> — true if a command was killed by sms_timeout for running past its cap.
+# 124 = GNU/coreutils timeout; 143 = 128+SIGTERM (BusyBox timeout); 137 = 128+SIGKILL.
+sms_is_timeout(){ case "${1:-}" in 124|137|143) return 0 ;; *) return 1 ;; esac; }
 sms_human(){ awk -v b="${1:-0}" 'BEGIN{split("B KB MB GB TB PB",u," "); i=1; while(b>=1024 && i<6){b/=1024;i++} printf (i==1?"%d %s":"%.1f %s"), b, u[i]}'; }
 
 # --- OS detection (WSL2 counts as linux; override SMS_OS=linux|macos for manual testing) ---

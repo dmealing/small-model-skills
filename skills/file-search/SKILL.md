@@ -14,7 +14,7 @@ mentions `API_KEY`", "find the notes about the router."
    brackets, and other metacharacters match themselves. It searches file *names* (via fd/find) and file
    *contents* (via ripgrep/grep) under the path — defaulting to the configured `SEARCH_ROOT`, or the
    current directory — and prints matching paths plus a verdict. It searches gitignored and hidden files
-   too (this is a whole-machine search), pruning only `.git`/`node_modules`. It is read-only.
+   too (this is a whole-machine search), pruning only `.git`/`node_modules`/`.cache`. It is read-only.
 2. Read the results:
    - Matches → report which files matched by name vs. by content.
    - `No matches` → the query may be too specific, or the search scope too narrow. Propose a broader path

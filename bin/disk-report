@@ -19,12 +19,20 @@ printf '%s\n' "$fs" | awk 'NR==1||/%/{print "  "$0}' | head -14
 target=$(sms_df_fullest)
 target="${target:-/}"
 sms_sec "biggest dirs one level under $target"
-dirs="$(sms_du_top1 "$target" | sort -rh -k1 | head -12 | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}')"
+# Capture du's exit code separately: du -d1 can flush PARTIAL subtree totals before sms_timeout kills it,
+# so an empty result isn't the only timeout signal — a truncated, mis-rankable list can print too.
+raw="$(sms_du_top1 "$target")"; drc=$?
+dirs=""
+[ -n "$raw" ] && dirs="$(printf '%s\n' "$raw" | sort -rh -k1 | head -12 | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}')"
 if [ -n "$dirs" ]; then
+  sms_is_timeout "$drc" && echo "  (PARTIAL — du was cut off by the ${SMS_DU_TIMEOUT:-20}s time limit before finishing;" \
+    "this ranking is INCOMPLETE and may be mis-ranked. Raise SMS_DU_TIMEOUT to try harder.)"
   printf '%s\n' "$dirs" | sms_toon dirs size,path
-else
+elif sms_is_timeout "$drc"; then
   echo "  (the tree under $target was too large to size within the time limit — see common hogs + the"
   echo "   biggest-files command in the verdict below; raise SMS_DU_TIMEOUT to try harder)"
+else
+  echo "  (nothing sizable found one level under $target, or it was not readable)"
 fi
 
 sms_sec "common space hogs"

@@ -24,9 +24,10 @@ sms_line "path"  "$path"
 
 sms_sec "files with a matching NAME"
 # -F/--fixed-strings: literal query (consistent with find's -iname glob). -I/-H: search gitignored + hidden
-# files too (whole-machine search), but still prune .git/node_modules to match the find fallback.
+# files too (whole-machine search), but prune .git/node_modules/.cache — the same noise dirs the find
+# fallback skips, so name results don't depend on which tool is installed.
 if [ -n "$FD" ]; then
-  names="$(sms_timeout "$NT" "$FD" -i -H -I -F -t f -E .git -E node_modules -- "$q" "$path" 2>/dev/null | head -"$MAX")"; nrc=$?
+  names="$(sms_timeout "$NT" "$FD" -i -H -I -F -t f -E .git -E node_modules -E .cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; nrc=$?
 else
   # find fallback: case-insensitive literal name glob, skip the usual noise dirs
   names="$(sms_timeout "$NT" find "$path" \( -name .git -o -name node_modules -o -name .cache \) -prune -o \
@@ -35,11 +36,12 @@ fi
 printf '%s\n' "$names" | grep -v '^$' | sms_toon name_matches path
 
 sms_sec "files whose CONTENTS match"
-# -F: literal query. --no-ignore/--hidden: search gitignored + hidden files too; prune .git/node_modules.
+# -F: literal query. --no-ignore/--hidden: search gitignored + hidden files too; prune
+# .git/node_modules/.cache (same noise dirs as the name search + find fallback).
 if have rg; then
-  content="$(sms_timeout "$CT" rg -l -i -F --hidden --no-ignore --no-messages -g '!.git' -g '!node_modules' -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
+  content="$(sms_timeout "$CT" rg -l -i -F --hidden --no-ignore --no-messages -g '!.git' -g '!node_modules' -g '!.cache' -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
 else
-  content="$(sms_timeout "$CT" grep -rliF --exclude-dir=.git --exclude-dir=node_modules -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
+  content="$(sms_timeout "$CT" grep -rliF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
 fi
 printf '%s\n' "$content" | grep -v '^$' | sms_toon content_matches path
 
@@ -47,12 +49,12 @@ sms_sec "verdict"
 # grep -c prints 0 on no match (and exits 1 — that's fine here); don't append a second 0
 nn=$(printf '%s' "$names"   | grep -c .); nn=${nn:-0}
 nc=$(printf '%s' "$content" | grep -c .); nc=${nc:-0}
-# sms_timeout returns 124 when it kills the search for running past the time cap. Distinguish that from a
+# sms_timeout kills the search (exit 124/143/137) when it runs past the time cap. Distinguish that from a
 # genuine no-match so we don't tell the user a file is absent when the search was actually cut off.
-if [ "$nrc" -eq 124 ] || [ "$crc" -eq 124 ]; then
+if sms_is_timeout "$nrc" || sms_is_timeout "$crc"; then
   parts=""; knobs=""
-  if [ "$nrc" -eq 124 ]; then parts="name"; knobs="SEARCH_NAME_TIMEOUT (now ${NT}s)"; fi
-  if [ "$crc" -eq 124 ]; then
+  if sms_is_timeout "$nrc"; then parts="name"; knobs="SEARCH_NAME_TIMEOUT (now ${NT}s)"; fi
+  if sms_is_timeout "$crc"; then
     [ -n "$parts" ] && parts="$parts and content" || parts="content"
     [ -n "$knobs" ] && knobs="$knobs / SEARCH_CONTENT_TIMEOUT (now ${CT}s)" || knobs="SEARCH_CONTENT_TIMEOUT (now ${CT}s)"
   fi
