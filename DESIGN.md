@@ -28,7 +28,7 @@ internet-less model into a useful **diagnostics + offline-dev assistant** for a 
    `sys-diag`), an identity header, structured `help[]` next-step hints alongside the existing
    plain-English verdict, and meaningful exit codes. **Every wrapper ends on exactly one
    machine-greppable verdict line** (`verdict: <OK|WARN|FAIL> <TAG> — <prose>`) so each doubles as a
-   monitoring probe — a future `smon` can grep `^verdict:` and alert on status/tag transitions. See
+   monitoring probe — `smon` (in `monitor/bin/`) greps `^verdict:` and alerts on status/tag transitions. See
    [Platform support & AXI conventions](#platform-support--axi-conventions-in-design) below.
 
 ## Architecture
@@ -56,6 +56,9 @@ Claude Code (offline, local model via Ollama)
 ```
 bin/                 net-diag, router-status, sys-diag, disk-report, log-triage, offline-prep, offline-doctor
 bin/lib/common.sh    config loader + shared helpers (digest formatting, PASS/FAIL, safe_run)
+monitor/bin/smon     routine system monitor orchestrator (runs probes, alerts on verdict transitions)
+monitor/README.md    smon documentation
+monitor/monitor.conf.example  smon configuration template
 modules/router/      sonicwall.sh (reference) + interface.md (how to add a vendor)
 skills/<name>/SKILL.md   runbooks, mirrors ~/.claude/skills layout
 config.example       generic config template
@@ -181,7 +184,9 @@ Opt out with `SMOLS_CURATED_SKILLS=0`; measured rationale in
 - v1: the catalog above, SonicWall router module, Doug's machine as first consumer.
 - Done: cross-platform (macOS native + Windows via WSL2), AXI output conventions, the `claude-local`
   launcher, the AXI session-hook ambient-context follow-on (see above), four more read-only diagnostic
-  skills (`ollama-doctor`, `freeze-forensics`, `runaway-hunter`, `docker-hygiene`), and the `smols`
-  offline catalog CLI that discovers installed skills from their `x-wrappers` frontmatter.
+  skills (`ollama-doctor`, `freeze-forensics`, `runaway-hunter`, `docker-hygiene`), the `smols`
+  offline catalog CLI that discovers installed skills from their `x-wrappers` frontmatter, and `smon`
+  (routine cross-machine monitor orchestrating verdict-emitting probes, with pluggable notify backends,
+  transition-only alerts, sustained-WARN policy, and optional cheap-model enrichment).
 - Later: publish public repo + docs; add router modules (OPNsense/pfSense/UniFi); add `grammar/` GBNF
   files to constrain tool-call JSON for the weakest models; optional `system-review` deep-dive port.

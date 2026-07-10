@@ -1,6 +1,9 @@
 # small-model-skills configuration.
 # Copy to ~/.config/small-model-skills/config and edit. Sourced as shell (KEY=value, no spaces around =).
 # Leave a value blank to auto-detect where possible. Never commit your filled-in copy.
+#
+# NOTE: smon (the routine system monitor in monitor/bin/) has its own separate config file:
+# ~/.config/small-model-skills/monitor.conf — see monitor/monitor.conf.example for details.
 
 # --- Network ---
 GATEWAY_IP=                  # router/gateway LAN IP (blank = auto-detect from default route)

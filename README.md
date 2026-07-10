@@ -78,6 +78,11 @@ portability bugs the macOS port surfaced along the way.
 | `runaway-hunter` | what's pegged the CPU for hours? aged / zombie / runaway processes → propose the kill |
 | `docker-hygiene` | Docker eating disk? orphan volumes / images / build cache, compose-aware |
 
+**Monitor** (orchestrator; turns probes into a recurring cross-machine monitor):
+| Tool | Does |
+|---|---|
+| `smon` | routine system monitor — runs each configured probe on a schedule, reads its verdict, alerts on state transitions (not blips), optional cheap-model enrichment, heartbeat for dead-host detection |
+
 **Search** (read-only; find a file, don't triage):
 | Skill | Answers |
 |---|---|
@@ -92,6 +97,8 @@ portability bugs the macOS port surfaced along the way.
 | Skill | Does |
 |---|---|
 | `model-bench` | run a hard diagnostic benchmark across models (local Ollama vs cloud GLM) and score them blind + pointwise with a Gemini LLM-as-judge — pick the right model, catch regressions |
+
+See `monitor/README.md` for `smon` setup and config.
 
 **For contributors:** `audit-small-model-skills` + `skill-audit` enforce the authoring standard
 (`docs/authoring-small-model-skills.md`) so new skills stay small-model-safe.
@@ -260,6 +267,7 @@ ships in `modules/router/`. To add yours, see `modules/router/interface.md`.
 ## Documentation
 
 - [Quickstart](#quickstart-2-min) / [Setup](#setup) — get it running *(start here)*
+- [`monitor/README.md`](monitor/README.md) — smon (routine system monitor) setup and config *(reference)*
 - [`docs/authoring-small-model-skills.md`](docs/authoring-small-model-skills.md) — the standard for writing
   skills a small model can execute *(how-to + reference)*
 - [`DESIGN.md`](DESIGN.md) — architecture and why it's built this way *(explanation)*

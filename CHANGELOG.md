@@ -7,11 +7,25 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`smon` — routine cross-machine system monitor** (`monitor/bin/smon`) built on the verdict contract.
+  Runs configured diagnostic probes on a schedule (cron), reads their `verdict:` lines, alerts on meaningful
+  state transitions (not every threshold blip). Deterministic core decides whether to alert; an optional
+  cheap model (GLM/local/none) only enriches the message and never gates — if the model is down, the raw
+  verdict prose ships. Steady state (all OK) makes zero model calls. Alert policy: FAIL → immediate push
+  (bypasses quiet hours), WARN → push only after it persists `SMON_WARN_SUSTAIN` consecutive sweeps (default 2,
+  rides out blips), recovery → resolved note, unchanged → silent. Pluggable notify backends (HA mobile push,
+  Uptime Kuma heartbeat, stdout). Every sweep ends with a heartbeat so a dead/frozen host is detectable
+  Kuma-side (missing heartbeat). Host-specific config (real hostnames, LAN IPs, tokens, notify targets) belongs
+  in a separate private config repo deployed to `~/.config/small-model-skills/monitor.conf` — the engine is
+  public and contains zero host specifics. Deliberately transition-only and sustained-WARN to avoid the
+  alert-theater fatigue that killed two prior monitors. See `monitor/README.md` and design spec
+  `docs/superpowers/specs/2026-07-10-smon-system-monitor-design.md`. Includes a shim-based test suite
+  (`monitor/test/smon-test.sh`, 12 cases) covering sustain/dedupe/recovery/quiet-hours/missing-verdict paths.
 - **Verdict contract** — every `bin/*` wrapper now ends on exactly one machine-greppable line via the new
   `smols_verdict` helper: `verdict: <OK|WARN|FAIL> <TAG> — <prose>`. Fixed vocabulary (OK/WARN/FAIL; FAIL also
   covers a probe that couldn't run — `PROBE_FAILED` — or a down daemon), `SCREAMING_SNAKE` tags, verdict
-  status independent of exit code. This turns every diagnostic wrapper into a monitoring probe (a future
-  `smon` greps `^verdict:` and alerts on transitions). Documented in `docs/authoring-small-model-skills.md`.
+  status independent of exit code. This turns every diagnostic wrapper into a monitoring probe — `smon`
+  greps `^verdict:` and alerts on transitions. Documented in `docs/authoring-small-model-skills.md`.
 - Config-tunable verdict thresholds: `DISK_WARN_PCT`/`DISK_CRIT_PCT`, `LOAD_WARN_FACTOR`, `CPU_HOG_PCT`,
   `SWAP_WARN_KB`, `TEMP_WARN_C` (documented in `config.example`). `smols_df_full_pct` helper added to both OS
   backends.
