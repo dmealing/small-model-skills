@@ -181,14 +181,14 @@ eval_probe(){
       if [ "$p_count" -ge "$SMON_WARN_SUSTAIN" ]; then do_alert=1; kind=warn; fi
     fi
   else
-    # transition.
+    # transition. p_since records when current state began (not yet used for decisions, available for future time-based policy).
     case "$V_STATUS" in
-      FAIL) do_alert=1; kind=fail; p_count=1 ;;
+      FAIL) do_alert=1; kind=fail; p_count=1; p_since=$now ;;
       WARN) p_since=$now; p_count=1
             [ "$SMON_WARN_SUSTAIN" -le 1 ] && { do_alert=1; kind=warn; } ;;
       OK)   # recovery only if we had alerted on the prior state
             [ "$p_alerted" = 1 ] && { do_alert=1; kind=recovery; }
-            p_count=0 ;;
+            p_count=0; p_since=$now ;;
     esac
   fi
 
