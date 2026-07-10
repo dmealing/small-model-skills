@@ -83,11 +83,16 @@ in_quiet_hours(){
 }
 
 # --- notify backends ------------------------------------------------------------------------
-# notify_send <status> <title> <body>. FAIL bypasses quiet hours; other levels respect them.
+# notify_send <status> <title> <body>. FAIL (critical) and recovery (status OK) always deliver;
+# only a sustained WARN is deferrable. A recovery is emitted ONLY for a condition the user was
+# already alerted about, so delivering it at night closes a known-open loop rather than adding
+# surprise noise. Returns 0 if the alert was actually dispatched, 1 if it was suppressed (quiet
+# hours) so the caller can leave the finding UNalerted and re-try it on a later sweep instead of
+# marking it alerted-but-never-delivered (which would also mis-fire a later "recovered" push).
 notify_send(){
   local status="$1" title="$2" body="$3" b
-  if [ "$status" != FAIL ] && in_quiet_hours; then
-    log "notify suppressed (quiet hours): $title"; return
+  if [ "$status" = WARN ] && in_quiet_hours; then
+    log "notify deferred (quiet hours): $title"; return 1
   fi
   for b in $SMON_NOTIFY; do
     case "$b" in
@@ -97,6 +102,7 @@ notify_send(){
       *) log "unknown notify backend '$b'" ;;
     esac
   done
+  return 0   # dispatched (a per-backend transport failure is logged in notify_ha, not fatal here)
 }
 
 notify_ha(){
@@ -166,16 +172,22 @@ eval_probe(){
   local probe="$1" out now prc
   now=$(date +%s)
   if [ ! -x "$PROBE_BIN/$probe" ]; then
-    log "probe '$probe' not found/executable at $PROBE_BIN — skipping"; return
-  fi
-  out="$(smols_timeout "$SMON_PROBE_TIMEOUT" "$PROBE_BIN/$probe" 2>/dev/null)"; prc=$?
-  if smols_is_timeout "$prc"; then
-    V_STATUS=FAIL; V_TAG=PROBE_TIMEOUT; V_PROSE="probe did not finish within ${SMON_PROBE_TIMEOUT}s"
+    # A missing/broken probe is lost visibility, which is itself alert-worthy — do NOT skip it
+    # silently. Surface it as a FAIL so it transitions and alerts like any other failure.
+    log "probe '$probe' not found/executable at $PROBE_BIN"
+    V_STATUS=FAIL; V_TAG=PROBE_MISSING; V_PROSE="probe '$probe' is missing or not executable at $PROBE_BIN"
+    out=""
   else
-    parse_verdict "$out"                     # -> V_STATUS V_TAG V_PROSE
+    out="$(smols_timeout "$SMON_PROBE_TIMEOUT" "$PROBE_BIN/$probe" 2>/dev/null)"; prc=$?
+    if smols_is_timeout "$prc"; then
+      V_STATUS=FAIL; V_TAG=PROBE_TIMEOUT; V_PROSE="probe did not finish within ${SMON_PROBE_TIMEOUT}s"
+    else
+      parse_verdict "$out"                     # -> V_STATUS V_TAG V_PROSE
+    fi
   fi
   # shellcheck disable=SC2046
   IFS=" " read -r p_status p_tag p_since p_count p_alerted <<<"$(read_state "$probe")"
+  local p_alerted_prev="$p_alerted"   # whether the state we're leaving had been alerted
 
   local key_now="$V_STATUS/$V_TAG" key_prev="$p_status/$p_tag"
   local do_alert=0 kind=""
@@ -187,32 +199,44 @@ eval_probe(){
       if [ "$p_count" -ge "$SMON_WARN_SUSTAIN" ]; then do_alert=1; kind=warn; fi
     fi
   else
-    # transition. p_since records when current state began (not yet used for decisions, available for future time-based policy).
+    # transition (status OR tag changed). p_since records when the current state began (not yet
+    # used for decisions, available for future time-based policy). Reset p_alerted here: the new
+    # state is a fresh condition that has not been alerted, even when drifting WARN/A -> WARN/B
+    # (otherwise B inherits A's alerted=1 and, being "unchanged" next sweep, never matures/pushes).
+    p_alerted=0
     case "$V_STATUS" in
       FAIL) do_alert=1; kind=fail; p_count=1; p_since=$now ;;
       WARN) p_since=$now; p_count=1
             [ "$SMON_WARN_SUSTAIN" -le 1 ] && { do_alert=1; kind=warn; } ;;
-      OK)   # recovery only if we had alerted on the prior state
-            [ "$p_alerted" = 1 ] && { do_alert=1; kind=recovery; }
+      OK)   # recovery only if we had alerted on the state we just left
+            [ "$p_alerted_prev" = 1 ] && { do_alert=1; kind=recovery; }
             p_count=0; p_since=$now ;;
     esac
   fi
 
   local new_alerted="$p_alerted"
   if [ "$do_alert" = 1 ]; then
-    local title body status_for_notify="$V_STATUS"
+    local title body status_for_notify="$V_STATUS" dispatched=0
     case "$kind" in
       fail)     title="🔴 $SMON_HOST: $V_TAG"; body="$(enrich "$out" "$V_PROSE")" ;;
       warn)     title="🟠 $SMON_HOST: $V_TAG"; body="$(enrich "$out" "$V_PROSE")" ;;
       recovery) title="🟢 $SMON_HOST: $probe recovered ($p_tag → OK)"; body="$V_PROSE"; status_for_notify=OK ;;
     esac
     if [ "$DRY_RUN" = 1 ]; then
-      printf '[DRY %s] %s\n  %s\n' "$status_for_notify" "$title" "$body"
+      printf '[DRY %s] %s\n  %s\n' "$status_for_notify" "$title" "$body"; dispatched=1
     else
-      notify_send "$status_for_notify" "$title" "$body"
+      notify_send "$status_for_notify" "$title" "$body" && dispatched=1
     fi
-    log "ALERT[$kind] $probe $key_prev -> $key_now"
-    [ "$kind" = recovery ] && new_alerted=0 || new_alerted=1
+    if [ "$dispatched" = 1 ]; then
+      log "ALERT[$kind] $probe $key_prev -> $key_now"
+      [ "$kind" = recovery ] && new_alerted=0 || new_alerted=1
+    else
+      # suppressed (quiet hours): leave the finding UNalerted so it re-tries on a later sweep.
+      # Hold the maturing counter at the sustain threshold so it fires immediately once out of
+      # quiet hours, rather than restarting the sustain wait.
+      log "HELD[$kind] $probe $key_prev -> $key_now (quiet hours; will retry)"
+      [ "$kind" = warn ] && p_count="$SMON_WARN_SUSTAIN"
+    fi
   fi
 
   write_state "$probe" "$V_STATUS" "$V_TAG" "$p_since" "$p_count" "$new_alerted"
