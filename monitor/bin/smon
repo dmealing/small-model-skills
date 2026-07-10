@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+# smon — routine system monitor built on the small-model-skills verdict contract.
+#
+# Runs each configured diagnostic PROBE, reads its `verdict: <OK|WARN|FAIL> <TAG> — prose`
+# line, compares to the previous sweep's saved state, and alerts on meaningful transitions
+# via pluggable notify backends. Deterministic core decides WHETHER to alert; an optional
+# cheap model only ENRICHES the message and never gates. Ends every sweep with a heartbeat
+# so a dead/frozen host is itself detectable (Kuma-side missing heartbeat).
+#
+# Read-only w.r.t. the system (it only runs the read-only probes). Intended to run from cron
+# (e.g. every 10 min). Config: ~/.config/small-model-skills/monitor.conf (see monitor.conf.example).
+#
+# Exit: 0 sweep ran (regardless of what it found); 1 misconfiguration (no probes / bad config).
+#
+# Usage:
+#   smon                 # one sweep
+#   smon --dry-run       # sweep + decide, but print alerts to stdout instead of sending
+#   smon --test-alert    # send one synthetic alert through the notify backends and exit
+#   smon --once <probe>  # run a single probe through the pipeline (debugging)
+set -uo pipefail
+
+# --- locate the repo's shared lib (smon lives in monitor/bin; lib is ../../bin/lib) --------
+SELF="$(readlink -f "$0")"
+MON_BIN="$(cd "$(dirname "$SELF")" && pwd)"
+REPO_ROOT="$(cd "$MON_BIN/../.." && pwd)"
+PROBE_BIN="$REPO_ROOT/bin"                 # where sys-diag/disk-report/... live
+# shellcheck disable=SC1091
+. "$PROBE_BIN/lib/common.sh"               # smols_* helpers + loads the probes' own config
+
+# --- monitor config (host-specific; deployed from the private config repo) ------------------
+SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
+# shellcheck disable=SC1090
+[ -r "$SMON_CONFIG" ] && . "$SMON_CONFIG"
+
+: "${SMON_PROBES:=sys-diag disk-report log-triage runaway-hunter}"
+: "${SMON_BRAIN:=none}"                    # glm | local | none  (enrichment engine)
+: "${SMON_NOTIFY:=stdout}"                 # space-separated: ha-push kuma stdout
+: "${SMON_HA_URL:=}"
+: "${SMON_HA_TOKEN:=}"                      # or set SMON_HA_TOKEN_CMD to fetch it
+: "${SMON_HA_TOKEN_CMD:=}"
+: "${SMON_HA_TARGET:=}"                     # e.g. notify.mobile_app_<device>
+: "${SMON_KUMA_PUSH_URL:=}"
+: "${SMON_QUIET_START:=23}"
+: "${SMON_QUIET_END:=7}"
+: "${SMON_WARN_SUSTAIN:=2}"                 # consecutive sweeps a WARN must persist before pushing
+: "${SMON_STATE_DIR:=$HOME/.local/state/smon}"
+: "${SMON_LOG:=$HOME/logs/smon.log}"
+: "${SMON_HOST:=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo host)}"
+: "${SMON_ZAI_ENV:=$HOME/.config/small-model-skills/zai.env}"
+: "${SMON_CLAUDE_BIN:=claude}"
+
+mkdir -p "$SMON_STATE_DIR" "$(dirname "$SMON_LOG")" 2>/dev/null || true
+
+DRY_RUN=0; TEST_ALERT=0; ONLY_PROBE=""
+case "${1:-}" in
+  --dry-run)    DRY_RUN=1 ;;
+  --test-alert) TEST_ALERT=1 ;;
+  --once)       ONLY_PROBE="${2:-}" ;;
+  "" ) ;;
+  *) echo "usage: smon [--dry-run | --test-alert | --once <probe>]" >&2; exit 2 ;;
+esac
+
+log(){ printf '%s smon: %s\n' "$(date '+%F %T')" "$*" >> "$SMON_LOG" 2>/dev/null; }
+
+# --- single-instance lock (cron overlap guard) ---------------------------------------------
+exec 9>"$SMON_STATE_DIR/.lock"
+if ! flock -n 9; then log "another sweep is running; skipping"; exit 0; fi
+
+ha_token(){
+  [ -n "$SMON_HA_TOKEN" ] && { printf '%s' "$SMON_HA_TOKEN"; return; }
+  [ -n "$SMON_HA_TOKEN_CMD" ] && eval "$SMON_HA_TOKEN_CMD" 2>/dev/null
+}
+
+in_quiet_hours(){
+  local h; h=$(date +%-H)
+  if [ "$SMON_QUIET_START" -le "$SMON_QUIET_END" ]; then
+    [ "$h" -ge "$SMON_QUIET_START" ] && [ "$h" -lt "$SMON_QUIET_END" ]
+  else
+    [ "$h" -ge "$SMON_QUIET_START" ] || [ "$h" -lt "$SMON_QUIET_END" ]
+  fi
+}
+
+# --- notify backends ------------------------------------------------------------------------
+# notify_send <status> <title> <body>. FAIL bypasses quiet hours; other levels respect them.
+notify_send(){
+  local status="$1" title="$2" body="$3" b
+  if [ "$status" != FAIL ] && in_quiet_hours; then
+    log "notify suppressed (quiet hours): $title"; return
+  fi
+  for b in $SMON_NOTIFY; do
+    case "$b" in
+      stdout)  printf '[smon %s] %s\n  %s\n' "$status" "$title" "$body" ;;
+      ha-push) notify_ha "$title" "$body" ;;
+      kuma)    : ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
+      *) log "unknown notify backend '$b'" ;;
+    esac
+  done
+}
+
+notify_ha(){
+  local title="$1" body="$2" tok url code
+  tok="$(ha_token)"
+  [ -n "$SMON_HA_URL" ] && [ -n "$SMON_HA_TARGET" ] && [ -n "$tok" ] || {
+    log "ha-push skipped (missing SMON_HA_URL / SMON_HA_TARGET / token)"; return; }
+  url="${SMON_HA_URL%/}/api/services/notify/${SMON_HA_TARGET#notify.}"
+  code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST "$url" \
+    -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+    --data "$(printf '%s' "$title" "$body" | python3 -c 'import sys,json
+t=sys.stdin.readline().rstrip("\n"); b=sys.stdin.read()
+print(json.dumps({"title":t,"message":b}))' 2>/dev/null)" 2>/dev/null)
+  if [ "$code" = 200 ]; then log "ha-push ok: $title"; else log "ha-push FAILED (HTTP $code): $title"; fi
+}
+
+heartbeat(){
+  [ -n "$SMON_KUMA_PUSH_URL" ] || return 0
+  local msg="$1" code
+  code=$(curl -s -m 15 -o /dev/null -w '%{http_code}' \
+    "${SMON_KUMA_PUSH_URL}?status=up&msg=$(printf '%s' "$msg" | sed 's/ /%20/g')" 2>/dev/null)
+  [ "$code" = 200 ] && log "heartbeat ok" || log "heartbeat FAILED (HTTP $code)"
+}
+
+# --- enrichment (cheap model, on transition only; failure -> raw prose) ---------------------
+enrich(){ # <digest> <verdict-prose> -> enriched sentence(s) on stdout (falls back to prose)
+  local digest="$1" prose="$2"
+  case "$SMON_BRAIN" in
+    none) printf '%s' "$prose"; return ;;
+  esac
+  local key out
+  local prompt="You are a terse sysadmin assistant. Given this diagnostic output, reply in at most 2 sentences: what the problem means and the single first thing to check. No preamble.
+
+$digest"
+  if [ "$SMON_BRAIN" = glm ] && [ -r "$SMON_ZAI_ENV" ]; then
+    key="$(sed -n 's/^ZAI_API_KEY=//p' "$SMON_ZAI_ENV" 2>/dev/null | head -1)"
+    if [ -n "$key" ]; then
+      out="$(smols_timeout 60 env ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic" \
+        ANTHROPIC_AUTH_TOKEN="$key" ANTHROPIC_API_KEY="" ANTHROPIC_MODEL="glm-5.2" \
+        "$SMON_CLAUDE_BIN" -p "$prompt" --output-format json 2>/dev/null \
+        | jq -r '.result // empty' 2>/dev/null)"
+    fi
+  elif [ "$SMON_BRAIN" = local ]; then
+    out="$(smols_timeout 60 "$SMON_CLAUDE_BIN" -p "$prompt" --output-format json 2>/dev/null \
+      | jq -r '.result // empty' 2>/dev/null)"
+  fi
+  [ -n "$out" ] && printf '%s' "$out" || printf '%s' "$prose"
+}
+
+# --- verdict parsing ------------------------------------------------------------------------
+# parse a probe's full output; sets globals V_STATUS V_TAG V_PROSE (FAIL/PROBE_MISSING on trouble)
+parse_verdict(){
+  local out="$1" vline
+  vline="$(printf '%s\n' "$out" | grep -m1 '^verdict:')"
+  if [ -z "$vline" ]; then V_STATUS=FAIL; V_TAG=NO_VERDICT; V_PROSE="probe emitted no verdict line"; return; fi
+  V_STATUS="$(printf '%s' "$vline" | awk '{print $2}')"
+  V_TAG="$(printf '%s' "$vline" | awk '{print $3}')"
+  V_PROSE="$(printf '%s' "$vline" | sed 's/^verdict: [A-Z]* [A-Z_]* — //')"
+  case "$V_STATUS" in OK|WARN|FAIL) ;; *) V_STATUS=FAIL; V_TAG=BAD_VERDICT; V_PROSE="unparseable verdict: $vline" ;; esac
+}
+
+# --- per-probe state: "status tag pending_since sweep_count alerted" ------------------------
+read_state(){ local f="$SMON_STATE_DIR/$1.state"; [ -r "$f" ] && cat "$f" || echo "OK NONE 0 0 0"; }
+write_state(){ printf '%s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" > "$SMON_STATE_DIR/$1.state"; }
+
+# --- core: evaluate one probe ---------------------------------------------------------------
+eval_probe(){
+  local probe="$1" out now
+  now=$(date +%s)
+  if [ ! -x "$PROBE_BIN/$probe" ]; then
+    log "probe '$probe' not found/executable at $PROBE_BIN — skipping"; return
+  fi
+  out="$("$PROBE_BIN/$probe" 2>/dev/null)"
+  parse_verdict "$out"                       # -> V_STATUS V_TAG V_PROSE
+  # shellcheck disable=SC2046
+  read -r p_status p_tag p_since p_count p_alerted <<<"$(read_state "$probe")"
+
+  local key_now="$V_STATUS/$V_TAG" key_prev="$p_status/$p_tag"
+  local do_alert=0 kind=""
+
+  if [ "$key_now" = "$key_prev" ]; then
+    # unchanged state. WARN may still be "maturing" toward its sustain threshold.
+    if [ "$V_STATUS" = WARN ] && [ "$p_alerted" = 0 ]; then
+      p_count=$((p_count+1))
+      if [ "$p_count" -ge "$SMON_WARN_SUSTAIN" ]; then do_alert=1; kind=warn; fi
+    fi
+  else
+    # transition.
+    case "$V_STATUS" in
+      FAIL) do_alert=1; kind=fail; p_count=1 ;;
+      WARN) p_since=$now; p_count=1
+            [ "$SMON_WARN_SUSTAIN" -le 1 ] && { do_alert=1; kind=warn; } ;;
+      OK)   # recovery only if we had alerted on the prior state
+            [ "$p_alerted" = 1 ] && { do_alert=1; kind=recovery; }
+            p_count=0 ;;
+    esac
+  fi
+
+  local new_alerted="$p_alerted"
+  if [ "$do_alert" = 1 ]; then
+    local title body status_for_notify="$V_STATUS"
+    case "$kind" in
+      fail)     title="🔴 $SMON_HOST: $V_TAG"; body="$(enrich "$out" "$V_PROSE")" ;;
+      warn)     title="🟠 $SMON_HOST: $V_TAG"; body="$(enrich "$out" "$V_PROSE")" ;;
+      recovery) title="🟢 $SMON_HOST: $probe recovered ($p_tag → OK)"; body="$V_PROSE"; status_for_notify=OK ;;
+    esac
+    if [ "$DRY_RUN" = 1 ]; then
+      printf '[DRY %s] %s\n  %s\n' "$status_for_notify" "$title" "$body"
+    else
+      notify_send "$status_for_notify" "$title" "$body"
+    fi
+    log "ALERT[$kind] $probe $key_prev -> $key_now"
+    [ "$kind" = recovery ] && new_alerted=0 || new_alerted=1
+  fi
+
+  write_state "$probe" "$V_STATUS" "$V_TAG" "$p_since" "$p_count" "$new_alerted"
+  SWEEP_SUMMARY="${SWEEP_SUMMARY}${probe}=${V_STATUS} "
+}
+
+# --- --test-alert: prove the notify path end to end -----------------------------------------
+if [ "$TEST_ALERT" = 1 ]; then
+  log "test-alert requested"
+  notify_send WARN "🧪 $SMON_HOST: smon test alert" "If you can read this, smon's notify path works."
+  heartbeat "smon test"
+  exit 0
+fi
+
+# --- sweep ----------------------------------------------------------------------------------
+SWEEP_SUMMARY=""
+probes="$SMON_PROBES"
+[ -n "$ONLY_PROBE" ] && probes="$ONLY_PROBE"
+[ -n "$probes" ] || { echo "smon: no probes configured (set SMON_PROBES)" >&2; log "no probes configured"; exit 1; }
+
+for p in $probes; do eval_probe "$p"; done
+
+heartbeat "${SWEEP_SUMMARY:-swept}"
+log "sweep done: ${SWEEP_SUMMARY:-none}"
+[ "$DRY_RUN" = 1 ] && echo "sweep: ${SWEEP_SUMMARY:-none}"
+exit 0
