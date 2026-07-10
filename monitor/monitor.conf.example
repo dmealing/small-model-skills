@@ -1,0 +1,35 @@
+# smon configuration — copy to ~/.config/small-model-skills/monitor.conf and edit per host.
+# Sourced as shell (KEY=value, no spaces around =). Host-specific values (real hostnames, LAN
+# IPs, tokens, notify targets) belong ONLY in your PRIVATE config repo, never committed here.
+
+# Which diagnostic probes this host runs each sweep (space-separated; must exist in ../bin).
+SMON_PROBES="sys-diag disk-report log-triage runaway-hunter"
+# Add on an inference host: ollama-doctor. On a Docker host: docker-hygiene. On a LAN
+# sentinel only: net-diag router-status (don't have every host poll the router).
+
+# Enrichment engine for alert messages: glm (cheap cloud) | local (Ollama) | none (raw prose).
+SMON_BRAIN=none
+
+# Notify backends (space-separated): ha-push (Home Assistant mobile push), kuma (heartbeat), stdout.
+SMON_NOTIFY="stdout"
+
+# --- Home Assistant mobile push (when SMON_NOTIFY includes ha-push) ---
+SMON_HA_URL=                 # e.g. http://<ha-host>:8123
+SMON_HA_TARGET=              # notify service, e.g. notify.mobile_app_<your_device>
+# Provide the token WITHOUT putting it in this file where possible — a command that prints it:
+SMON_HA_TOKEN_CMD=           # e.g. cat ~/.config/smon/ha.token   (or an op-get call)
+# SMON_HA_TOKEN=             # (discouraged) inline token fallback
+
+# --- Uptime Kuma heartbeat (when SMON_NOTIFY includes kuma, or always if set) ---
+SMON_KUMA_PUSH_URL=          # http://<kuma-host>:3001/api/push/<token>   (a missing heartbeat = host down)
+
+# --- Alert policy ---
+SMON_WARN_SUSTAIN=2          # a WARN must persist this many consecutive sweeps before it pushes
+SMON_QUIET_START=23          # suppress non-FAIL push from this hour ...
+SMON_QUIET_END=7             # ... until this hour (FAIL always pushes)
+SMON_PROBE_TIMEOUT=120       # seconds; defense against hung probes holding flock and causing monitoring blackout
+
+# --- Paths (defaults are usually fine) ---
+# SMON_STATE_DIR=$HOME/.local/state/smon
+# SMON_LOG=$HOME/logs/smon.log
+# SMON_HOST=                 # label used in alert titles (default: hostname -s)
