@@ -83,13 +83,15 @@ in_quiet_hours(){
 }
 
 # --- notify backends ------------------------------------------------------------------------
-# notify_send <status> <title> <body>. FAIL bypasses quiet hours; other levels respect them.
-# Returns 0 if the alert was actually dispatched, 1 if it was suppressed (quiet hours) so the
-# caller can leave the finding UNalerted and re-try it on a later sweep instead of marking it
-# alerted-but-never-delivered (which would also mis-fire a later "recovered" push).
+# notify_send <status> <title> <body>. FAIL (critical) and recovery (status OK) always deliver;
+# only a sustained WARN is deferrable. A recovery is emitted ONLY for a condition the user was
+# already alerted about, so delivering it at night closes a known-open loop rather than adding
+# surprise noise. Returns 0 if the alert was actually dispatched, 1 if it was suppressed (quiet
+# hours) so the caller can leave the finding UNalerted and re-try it on a later sweep instead of
+# marking it alerted-but-never-delivered (which would also mis-fire a later "recovered" push).
 notify_send(){
   local status="$1" title="$2" body="$3" b
-  if [ "$status" != FAIL ] && in_quiet_hours; then
+  if [ "$status" = WARN ] && in_quiet_hours; then
     log "notify deferred (quiet hours): $title"; return 1
   fi
   for b in $SMON_NOTIFY; do

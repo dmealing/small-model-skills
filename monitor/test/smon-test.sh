@@ -124,6 +124,23 @@ out="$(SMON_CONFIG=/dev/null SMON_PROBES=zz-does-not-exist SMON_NOTIFY=stdout SM
   "$SMON" 2>/dev/null)"
 check "  missing probe -> FAIL PROBE_MISSING alert" "PROBE_MISSING" "$out"
 
+echo "=== 16. BUG: recovery alerts during quiet hours must not be dropped ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; QS=0 QE=0 run >/dev/null
+set_verdict "FAIL DAEMON_DOWN — down"; out="$(QS=0 QE=0 run)"; check "  FAIL alerted" "DAEMON_DOWN" "$out"
+# force quiet hours and drive recovery — it should STILL push (not be suppressed)
+set_verdict "OK NOMINAL — recovered"; out="$(QS=0 QE=24 run)"; check "  recovery pushes during quiet hours" "recovered" "$out"
+# final state should be OK with count=0 alerted=0 (recovery resets alerted)
+state="$(awk '{print $1, $2, $4, $5}' "$STATE"/zz-faketest.state)"; check "  final state is OK with alerted=0" "OK NOMINAL 0 0" "$state"
+
+echo "=== 17. regression: WARN during quiet hours is still deferred (not over-broadened) ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; QS=0 QE=24 WARN_SUSTAIN=1 run >/dev/null
+# WARN during quiet hours should still be deferred (not delivered like FAIL/recovery)
+set_verdict "WARN CPU_HOG — hot"; out="$(QS=0 QE=24 WARN_SUSTAIN=1 run)"; check "  WARN still deferred during quiet hours" EMPTY "$out"
+# and should deliver once out of quiet hours
+out="$(QS=0 QE=0 WARN_SUSTAIN=1 run)"; check "  deferred WARN delivered after quiet hours" "CPU_HOG" "$out"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
