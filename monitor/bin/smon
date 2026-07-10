@@ -68,7 +68,8 @@ if ! flock -n 9; then log "another sweep is running; skipping"; exit 0; fi
 
 ha_token(){
   [ -n "$SMON_HA_TOKEN" ] && { printf '%s' "$SMON_HA_TOKEN"; return; }
-  [ -n "$SMON_HA_TOKEN_CMD" ] && eval "$SMON_HA_TOKEN_CMD" 2>/dev/null
+  # config-supplied command, run as the user — same trust as the sourced config itself
+  [ -n "$SMON_HA_TOKEN_CMD" ] && smols_timeout 10 bash -c "$SMON_HA_TOKEN_CMD" 2>/dev/null
 }
 
 in_quiet_hours(){
@@ -105,9 +106,7 @@ notify_ha(){
   url="${SMON_HA_URL%/}/api/services/notify/${SMON_HA_TARGET#notify.}"
   code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST "$url" \
     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
-    --data "$(printf '%s' "$title" "$body" | python3 -c 'import sys,json
-t=sys.stdin.readline().rstrip("\n"); b=sys.stdin.read()
-print(json.dumps({"title":t,"message":b}))' 2>/dev/null)" 2>/dev/null)
+    --data "$(jq -n --arg title "$title" --arg message "$body" '{title:$title,message:$message}')" 2>/dev/null)
   if [ "$code" = 200 ]; then log "ha-push ok: $title"; else log "ha-push FAILED (HTTP $code): $title"; fi
 }
 
@@ -115,7 +114,7 @@ heartbeat(){
   [ -n "$SMON_KUMA_PUSH_URL" ] || return 0
   local msg="$1" code
   code=$(curl -s -m 15 -o /dev/null -w '%{http_code}' \
-    "${SMON_KUMA_PUSH_URL}?status=up&msg=$(printf '%s' "$msg" | sed 's/ /%20/g')" 2>/dev/null)
+    "${SMON_KUMA_PUSH_URL}?status=up&msg=$(printf '%s' "$msg" | jq -sRr @uri)" 2>/dev/null)
   [ "$code" = 200 ] && log "heartbeat ok" || log "heartbeat FAILED (HTTP $code)"
 }
 
@@ -148,7 +147,7 @@ $digest"
 # parse a probe's full output; sets globals V_STATUS V_TAG V_PROSE (FAIL/PROBE_MISSING on trouble)
 parse_verdict(){
   local out="$1" vline
-  vline="$(printf '%s\n' "$out" | grep -m1 '^verdict:')"
+  vline="$(printf '%s\n' "$out" | grep -m1 '^verdict: ')"
   if [ -z "$vline" ]; then V_STATUS=FAIL; V_TAG=NO_VERDICT; V_PROSE="probe emitted no verdict line"; return; fi
   V_STATUS="$(printf '%s' "$vline" | awk '{print $2}')"
   V_TAG="$(printf '%s' "$vline" | awk '{print $3}')"
@@ -170,7 +169,7 @@ eval_probe(){
   out="$("$PROBE_BIN/$probe" 2>/dev/null)"
   parse_verdict "$out"                       # -> V_STATUS V_TAG V_PROSE
   # shellcheck disable=SC2046
-  read -r p_status p_tag p_since p_count p_alerted <<<"$(read_state "$probe")"
+  IFS=" " read -r p_status p_tag p_since p_count p_alerted <<<"$(read_state "$probe")"
 
   local key_now="$V_STATUS/$V_TAG" key_prev="$p_status/$p_tag"
   local do_alert=0 kind=""
