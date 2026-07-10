@@ -69,12 +69,17 @@ already in `~/.config/small-model-skills/config` — smon does not re-implement 
 The last two monitors died because they alerted on every threshold blip. smon keys on the
 transition of `<status,tag>` per probe:
 
-- **→ FAIL**: push immediately (and never suppressed by quiet hours).
+- **→ FAIL**: push immediately (bypasses quiet hours).
 - **→ WARN**: hold. Push only if the *same* WARN tag persists for `SMON_WARN_SUSTAIN` (default 2)
-  consecutive sweeps — rides out momentary spikes.
-- **Recovery** (a state we previously alerted on returns to OK): push a short "resolved" note.
+  consecutive sweeps — rides out momentary spikes. A WARN deferred by quiet hours stays unalerted
+  and retries on a later sweep, with its count pinned at the sustain threshold so it fires
+  immediately once out of quiet hours.
+- **Recovery** (a state we previously alerted on returns to OK): push a short "resolved" note
+  (bypasses quiet hours — closes a known-open loop rather than adding surprise noise).
 - **Unchanged** from last sweep: silent.
-- Quiet hours suppress WARN/recovery push (FAIL always goes).
+- **Missing/broken probe**: synthesizes FAIL PROBE_MISSING and alerts (a broken probe is lost
+  visibility, alert-worthy itself).
+- Quiet hours defer only sustained WARNs; FAIL and recovery always deliver.
 
 State per probe in `$SMON_STATE_DIR/<probe>.state`: `status tag pending_since sweep_count
 alerted`. Single-instance via `flock` on a lock file (pattern from `wan-failover-alert.sh`).
@@ -107,7 +112,9 @@ Shim-based (same technique as the failover dispatcher + verdict contract work):
 
 1. Fake probe emitting scriptable verdicts + fake `notify`/`curl`. Assert:
    no-transition → silent; →FAIL → push; WARN once → silent; WARN twice → push;
-   recovery → push; model-down → raw prose ships; quiet-hours → WARN suppressed, FAIL not.
+   recovery → push; model-down → raw prose ships; quiet-hours → WARN deferred (not FAIL/recovery);
+   WARN tag-change alerts; missing probe → FAIL PROBE_MISSING. Test suite: `monitor/test/smon-test.sh`
+   (19 cases including 7 regression tests for silent-loss bugs fixed 2026-07-10).
 2. **Real end-to-end** on the first host: one real sweep, push one test alert to the primary phone,
    confirm a Kuma heartbeat lands.
 

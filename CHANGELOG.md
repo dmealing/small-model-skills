@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **`smon` silent-loss bugs** — three 'you'll never know' failure-class bugs in the alert policy, all
+  found by subagent review, confirmed against code and live state, and regression-tested (7 new test cases,
+  now 19 total): (1) **WARN tag-change swallow** — drifting WARN/CPU_HOG → WARN/MEMORY_PRESSURE inherited
+  the old tag's alerted=1 flag, was treated as 'unchanged' on the next sweep, and never matured/pushed (the
+  second condition silently never alerted). Fix: reset alerted on every status-or-tag transition; capture the
+  leaving-state's alerted separately (p_alerted_prev) so recovery logic still works. (2) **Quiet-hours dropped
+  WARNs** — a suppressed WARN during quiet hours still recorded alerted=1, so an overnight WARN was never
+  delivered AND later mis-fired a bogus 'recovered' push for an alert the user never saw. Fix: notify_send
+  now returns whether it actually dispatched (0=sent, 1=suppressed); a held alert stays unalerted and retries
+  on a later sweep, with its count pinned at the sustain threshold so it fires immediately once out of quiet
+  hours rather than restarting the wait. (3) **Missing probe silently skipped** — a missing/non-executable
+  probe was logged and returned, contradicting the repo's doctrine that a broken probe is lost visibility and
+  itself alert-worthy. Fix: synthesize FAIL PROBE_MISSING and evaluate it like any other failure. Verified
+  live: the fixed engine runs clean sweeps, a bogus probe produces a PROBE_MISSING alert, and a drifted
+  sys-diag WARN now recovers correctly.
+- **`smon` recovery alerts now bypass quiet hours** — recovery pushes (status OK after an alerted condition)
+  are now delivered even during quiet hours, along with FAIL (critical) alerts. Only sustained WARNs are
+  deferred. Rationale: a recovery closes a known-open loop the user was already alerted about, so delivering
+  it at night provides closure rather than adding surprise noise.
+
 ### Added
 - **`smon` — routine cross-machine system monitor** (`monitor/bin/smon`) built on the verdict contract.
   Runs configured diagnostic probes on a schedule (cron), reads their `verdict:` lines, alerts on meaningful
@@ -13,14 +34,15 @@ All notable changes to this project are documented here. The format is based on
   cheap model (GLM/local/none) only enriches the message and never gates — if the model is down, the raw
   verdict prose ships. Steady state (all OK) makes zero model calls. Alert policy: FAIL → immediate push
   (bypasses quiet hours), WARN → push only after it persists `SMON_WARN_SUSTAIN` consecutive sweeps (default 2,
-  rides out blips), recovery → resolved note, unchanged → silent. Pluggable notify backends (HA mobile push,
-  Uptime Kuma heartbeat, stdout). Every sweep ends with a heartbeat so a dead/frozen host is detectable
+  rides out blips; deferred by quiet hours and retries on later sweeps), recovery → resolved note (bypasses
+  quiet hours), unchanged → silent. Pluggable notify backends (HA mobile push, Uptime Kuma heartbeat, stdout). Every sweep ends with a heartbeat so a dead/frozen host is detectable
   Kuma-side (missing heartbeat). Host-specific config (real hostnames, LAN IPs, tokens, notify targets) belongs
   in a separate private config repo deployed to `~/.config/small-model-skills/monitor.conf` — the engine is
   public and contains zero host specifics. Deliberately transition-only and sustained-WARN to avoid the
   alert-theater fatigue that killed two prior monitors. See `monitor/README.md` and design spec
   `docs/superpowers/specs/2026-07-10-smon-system-monitor-design.md`. Includes a shim-based test suite
-  (`monitor/test/smon-test.sh`, 12 cases) covering sustain/dedupe/recovery/quiet-hours/missing-verdict paths.
+  (`monitor/test/smon-test.sh`, 19 cases including 7 regression tests for the silent-loss bugs) covering
+  sustain/dedupe/recovery/quiet-hours/missing-verdict/tag-change/deferred-WARN paths.
 - **Verdict contract** — every `bin/*` wrapper now ends on exactly one machine-greppable line via the new
   `smols_verdict` helper: `verdict: <OK|WARN|FAIL> <TAG> — <prose>`. Fixed vocabulary (OK/WARN/FAIL; FAIL also
   covers a probe that couldn't run — `PROBE_FAILED` — or a down daemon), `SCREAMING_SNAKE` tags, verdict

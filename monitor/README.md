@@ -10,9 +10,9 @@ transitions — never on every threshold blip.
 ```
 cron (e.g. every 10 min) → smon:
   for each probe: run it, read its verdict, compare to last sweep
-  → FAIL:            push immediately
+  → FAIL:            push immediately (bypasses quiet hours)
   → WARN (sustained): push only after it persists SMON_WARN_SUSTAIN sweeps (rides out blips)
-  → recovery:        push a "resolved" note
+  → recovery:        push a "resolved" note (bypasses quiet hours)
   unchanged:         silent
   end of sweep:      heartbeat (so a dead/frozen host is detectable Kuma-side)
 ```
@@ -57,5 +57,6 @@ smon                 # a real sweep (what cron runs)
 
 See `monitor.conf.example` for every key. The important ones: `SMON_PROBES` (which probes),
 `SMON_NOTIFY` (`ha-push kuma stdout`), `SMON_BRAIN` (`glm|local|none`), `SMON_WARN_SUSTAIN`,
-`SMON_QUIET_START`/`END`. Probe thresholds themselves (`DISK_WARN_PCT`, `TEMP_WARN_C`, …) live
-in the probes' own config (`~/.config/small-model-skills/config`); smon does not re-implement them.
+`SMON_QUIET_START`/`END` (FAIL and recovery bypass quiet hours; only WARNs are deferred). Probe
+thresholds themselves (`DISK_WARN_PCT`, `TEMP_WARN_C`, …) live in the probes' own config
+(`~/.config/small-model-skills/config`); smon does not re-implement them.
