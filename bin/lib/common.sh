@@ -16,8 +16,8 @@ smols_timeout(){ local s="$1"; shift
 # printed from inside smols_timeout is swallowed there. Prints at most once per process via the sentinel.
 smols_timeout_warn(){
   { have timeout || have gtimeout; } && return 0
-  [ -n "${_SMS_NO_TIMEOUT_WARNED:-}" ] && return 0
-  _SMS_NO_TIMEOUT_WARNED=1
+  [ -n "${_SMOLS_NO_TIMEOUT_WARNED:-}" ] && return 0
+  _SMOLS_NO_TIMEOUT_WARNED=1
   echo "note: no timeout/gtimeout found — search/du not time-bounded on this host (install coreutils for gtimeout on macOS)" >&2
 }
 # smols_is_timeout <exit-code> — true if a command was killed by smols_timeout for running past its cap.
