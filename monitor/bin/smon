@@ -43,6 +43,7 @@ SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
 : "${SMON_QUIET_START:=23}"
 : "${SMON_QUIET_END:=7}"
 : "${SMON_WARN_SUSTAIN:=2}"                 # consecutive sweeps a WARN must persist before pushing
+: "${SMON_PROBE_TIMEOUT:=120}"              # seconds; defense against hung probes holding flock
 : "${SMON_STATE_DIR:=$HOME/.local/state/smon}"
 : "${SMON_LOG:=$HOME/logs/smon.log}"
 : "${SMON_HOST:=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo host)}"
@@ -153,6 +154,7 @@ parse_verdict(){
   V_TAG="$(printf '%s' "$vline" | awk '{print $3}')"
   V_PROSE="$(printf '%s' "$vline" | sed 's/^verdict: [A-Z]* [A-Z_]* — //')"
   case "$V_STATUS" in OK|WARN|FAIL) ;; *) V_STATUS=FAIL; V_TAG=BAD_VERDICT; V_PROSE="unparseable verdict: $vline" ;; esac
+  if [ -z "$V_TAG" ] || [ "$V_TAG" = "—" ]; then V_STATUS=FAIL; V_TAG=BAD_VERDICT; V_PROSE="malformed verdict (missing tag): $vline"; fi
 }
 
 # --- per-probe state: "status tag pending_since sweep_count alerted" ------------------------
@@ -161,13 +163,17 @@ write_state(){ printf '%s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" > "$SMON_STATE
 
 # --- core: evaluate one probe ---------------------------------------------------------------
 eval_probe(){
-  local probe="$1" out now
+  local probe="$1" out now prc
   now=$(date +%s)
   if [ ! -x "$PROBE_BIN/$probe" ]; then
     log "probe '$probe' not found/executable at $PROBE_BIN — skipping"; return
   fi
-  out="$("$PROBE_BIN/$probe" 2>/dev/null)"
-  parse_verdict "$out"                       # -> V_STATUS V_TAG V_PROSE
+  out="$(smols_timeout "$SMON_PROBE_TIMEOUT" "$PROBE_BIN/$probe" 2>/dev/null)"; prc=$?
+  if smols_is_timeout "$prc"; then
+    V_STATUS=FAIL; V_TAG=PROBE_TIMEOUT; V_PROSE="probe did not finish within ${SMON_PROBE_TIMEOUT}s"
+  else
+    parse_verdict "$out"                     # -> V_STATUS V_TAG V_PROSE
+  fi
   # shellcheck disable=SC2046
   IFS=" " read -r p_status p_tag p_since p_count p_alerted <<<"$(read_state "$probe")"
 

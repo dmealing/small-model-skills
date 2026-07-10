@@ -27,6 +27,7 @@ SMON_KUMA_PUSH_URL=          # http://<kuma-host>:3001/api/push/<token>   (a mis
 SMON_WARN_SUSTAIN=2          # a WARN must persist this many consecutive sweeps before it pushes
 SMON_QUIET_START=23          # suppress non-FAIL push from this hour ...
 SMON_QUIET_END=7             # ... until this hour (FAIL always pushes)
+SMON_PROBE_TIMEOUT=120       # seconds; defense against hung probes holding flock and causing monitoring blackout
 
 # --- Paths (defaults are usually fine) ---
 # SMON_STATE_DIR=$HOME/.local/state/smon
