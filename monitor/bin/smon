@@ -55,7 +55,7 @@ DRY_RUN=0; TEST_ALERT=0; ONLY_PROBE=""
 case "${1:-}" in
   --dry-run)    DRY_RUN=1 ;;
   --test-alert) TEST_ALERT=1 ;;
-  --once)       ONLY_PROBE="${2:-}" ;;
+  --once)       ONLY_PROBE="${2:-}"; [ -n "$ONLY_PROBE" ] || { echo "usage: smon --once <probe>" >&2; exit 2; } ;;
   "" ) ;;
   *) echo "usage: smon [--dry-run | --test-alert | --once <probe>]" >&2; exit 2 ;;
 esac
