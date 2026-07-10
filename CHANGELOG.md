@@ -84,6 +84,9 @@ All notable changes to this project are documented here. The format is based on
   124/137/143 means killed for time.
 
 ### Changed
+- **Repo-wide mechanical rename** — helper namespace renamed from `sms_` → `smols_` (functions like
+  `smols_timeout`, `smols_identity`) and `SMS_` → `SMOLS_` (env/config vars like `SMOLS_OS`, `SMOLS_CONFIG`)
+  to match the project name 'smols'. Touches every `bin/` wrapper and both OS backends.
 - The model recipe ships `num_ctx 65536`. Claude Code's system prompt + tool/skill defs are ~27–30K tokens,
   so 32K truncates real sessions and a model's native max wastes KV cache; 64K is the measured safe minimum.
 - Default local model is now **`qwen3-coder-cc`** — the `num_ctx 65536` build of the well-known, tool-capable

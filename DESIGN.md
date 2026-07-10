@@ -21,12 +21,14 @@ internet-less model into a useful **diagnostics + offline-dev assistant** for a 
 5. **Config-driven for portability.** No host-specific values are hardcoded. Every script reads
    `~/.config/small-model-skills/config` (user-supplied). This is what makes the library shareable *and*
    personal at once — your machine's values live in your config, never in the repo.
-6. **Agent-ergonomic output (in design).** Every consumer of `bin/` output is an agent reading stdout,
-   not a human at a terminal — so wrapper output is moving to
+6. **Agent-ergonomic output + verdict contract.** Every consumer of `bin/` output is an agent reading
+   stdout, not a human at a terminal — so wrapper output follows
    [AXI](https://axi.md/) (Agent eXperience Interface) conventions, created by
    [Kun Chen](https://x.com/kunchenguid): TOON for list-shaped data (e.g. the top-process table in
    `sys-diag`), an identity header, structured `help[]` next-step hints alongside the existing
-   plain-English verdict, and meaningful exit codes. See
+   plain-English verdict, and meaningful exit codes. **Every wrapper ends on exactly one
+   machine-greppable verdict line** (`verdict: <OK|WARN|FAIL> <TAG> — <prose>`) so each doubles as a
+   monitoring probe — a future `smon` can grep `^verdict:` and alert on status/tag transitions. See
    [Platform support & AXI conventions](#platform-support--axi-conventions-in-design) below.
 
 ## Architecture
