@@ -90,6 +90,40 @@ echo "=== 11. probe with NO verdict line -> treated as FAIL NO_VERDICT ==="
 rm -f "$STATE"/*.state
 printf 'some junk output\nno verdict here\n' > "$PROBE_OUT"; out="$(run)"; check "missing verdict -> FAIL" "NO_VERDICT" "$out"
 
+# --- regression tests for the three silent-loss bugs (fixed 2026-07-10) ---
+
+echo "=== 12. BUG: WARN tag-change must not be swallowed ==="
+rm -f "$STATE"/*.state
+# seed OK, then mature WARN/CPU_HOG to an alert (sustain=2)
+set_verdict "OK NOMINAL — start"; run >/dev/null
+set_verdict "WARN CPU_HOG — hot"; run >/dev/null            # sweep 1: maturing, silent
+out="$(run)"; check "  CPU_HOG matured pushes" "CPU_HOG" "$out"   # sweep 2: pushes
+# now drift to a DIFFERENT WARN tag — must eventually alert, not be swallowed
+set_verdict "WARN MEMORY_PRESSURE — swap"; out="$(run)"; check "  tag-change sweep 1 silent (re-maturing)" EMPTY "$out"
+out="$(run)"; check "  tag-change MEMORY_PRESSURE pushes (not swallowed)" "MEMORY_PRESSURE" "$out"
+
+echo "=== 13. BUG: quiet-hours defers (not drops) a WARN ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; QS=0 QE=24 WARN_SUSTAIN=1 run >/dev/null
+# WARN during quiet hours: suppressed now...
+set_verdict "WARN DISK_HIGH — 88%"; out="$(QS=0 QE=24 WARN_SUSTAIN=1 run)"; check "  WARN held during quiet hours" EMPTY "$out"
+# ...same WARN, now OUTSIDE quiet hours (QS=QE=0 => never quiet) must still deliver
+out="$(QS=0 QE=0 WARN_SUSTAIN=1 run)"; check "  deferred WARN delivered after quiet hours" "DISK_HIGH" "$out"
+
+echo "=== 14. BUG: quiet-hours-dropped WARN must not later mis-fire a 'recovered' push ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; QS=0 QE=24 WARN_SUSTAIN=1 run >/dev/null
+set_verdict "WARN CPU_HOG — hot"; QS=0 QE=24 WARN_SUSTAIN=1 run >/dev/null     # suppressed, never delivered
+set_verdict "OK NOMINAL — fine"; out="$(QS=0 QE=24 WARN_SUSTAIN=1 run)"; check "  no phantom recovery for never-sent WARN" EMPTY "$out"
+
+echo "=== 15. BUG: a MISSING probe surfaces as FAIL PROBE_MISSING (not silently skipped) ==="
+rm -f "$STATE"/*.state
+# point smon at a probe that does not exist
+out="$(SMON_CONFIG=/dev/null SMON_PROBES=zz-does-not-exist SMON_NOTIFY=stdout SMON_BRAIN=none \
+  SMON_STATE_DIR="$STATE" SMON_LOG="$TMP/smon.log" SMON_HOST=testhost SMON_WARN_SUSTAIN=1 \
+  "$SMON" 2>/dev/null)"
+check "  missing probe -> FAIL PROBE_MISSING alert" "PROBE_MISSING" "$out"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
