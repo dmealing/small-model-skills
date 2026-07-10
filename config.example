@@ -30,7 +30,7 @@ LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any ca
 # claude-local exposes ONLY this repo's skills by default (a curated CLAUDE_CONFIG_DIR home built by
 # install.sh), which also means your global ~/.claude context does not load. Uncomment to opt out and use
 # your full ~/.claude config instead. See docs/tuning-local-models.md.
-# SMS_CURATED_SKILLS=0
+# SMOLS_CURATED_SKILLS=0
 
 # --- Diagnostics tuning (ollama-doctor / runaway-hunter / freeze-forensics) ---
 OLLAMA_URL=http://localhost:11434   # ollama-doctor: local Ollama API base URL
@@ -38,7 +38,18 @@ RUNAWAY_CPU_PCT=50                  # runaway-hunter: flag processes above this 
 RUNAWAY_AGE_HOURS=4                 # ... AND running longer than this many hours
 RUNAWAY_OFFENDERS=                  # extra comm/name patterns to always flag, space-separated (e.g. "bun pop-upgrade")
 KNOWN_BAD_KERNELS=                  # freeze-forensics: kernel versions to warn about, space-separated (blank = none)
-FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log (host-specific; blank = off)
+FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log.
+                                    #   Host-specific; blank = off. Executed as code and hard-capped at 10s, but the
+                                    #   command should ALSO set its own low timeout, e.g.:
+                                    #   ssh -o ConnectTimeout=5 loghost 'tail -50 /var/log/popos-netconsole.log'
+
+# --- Verdict thresholds (the WARN/FAIL a wrapper reports; each host can tune) ---
+# DISK_WARN_PCT=85      # disk-report WARN (DISK_HIGH) at/above this % on the fullest filesystem
+# DISK_CRIT_PCT=95      # disk-report FAIL (DISK_CRITICAL) at/above this %
+# LOAD_WARN_FACTOR=1.5  # sys-diag WARN (HIGH_LOAD) when 1-min load > cores * this factor
+# CPU_HOG_PCT=90        # sys-diag WARN (CPU_HOG) when a single process uses >= this %core
+# SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB
+# TEMP_WARN_C=85        # sys-diag WARN (THERMAL) when the hottest CPU/GPU sensor is >= this °C
 
 # --- File search (file-search skill / find-files) ---
 SEARCH_ROOT=            # default dir to search when none is given (blank = current dir; e.g. set to $HOME)
@@ -47,6 +58,6 @@ SEARCH_MAX=20           # cap results per section (names / contents)
 # SEARCH_CONTENT_TIMEOUT=20 # seconds before the file-CONTENT search is cut off
 
 # --- Disk report (disk-report skill) ---
-# SMS_DU_TIMEOUT=20       # seconds to spend sizing the biggest dirs one level under the fullest filesystem
-# SMS_DU_HOG_TIMEOUT=8    # seconds per common hog dir (/var/log, ~/.cache, /var/cache, /tmp)
-# SMS_DOCKER_TIMEOUT=8    # seconds for 'docker system df' (bounded so a wedged daemon can't hang the report)
+# SMOLS_DU_TIMEOUT=20       # seconds to spend sizing the biggest dirs one level under the fullest filesystem
+# SMOLS_DU_HOG_TIMEOUT=8    # seconds per common hog dir (/var/log, ~/.cache, /var/cache, /tmp)
+# SMOLS_DOCKER_TIMEOUT=8    # seconds for 'docker system df' (bounded so a wedged daemon can't hang the report)

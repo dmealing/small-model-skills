@@ -17,7 +17,7 @@ router_module_enrich(){
   B="https://${ROUTER_HOST}:${ROUTER_API_PORT:-8443}/api/sonicos"
   local A=(-k -s -u "$U:$P" --max-time 8)
   curl "${A[@]}" -X POST "$B/auth" --data '{"override":false}' -H 'Content-Type: application/json' -o /dev/null || { echo "  (sonicwall: REST auth failed)"; return; }
-  sms_sec "router detail (REST via $SRC)"
+  smols_sec "router detail (REST via $SRC)"
   curl "${A[@]}" "$B/version" | jq -r '"  \(.model)  \(.firmware_version)  (up \(.system_uptime))"' 2>/dev/null
   curl "${A[@]}" "$B/failover-lb/groups" | jq -r '.failover_lb.group[]? | "  LB: \(.name|gsub("^ +";"")) | type=\(.type) preempt=\(.preempt) final_backup=\(.final_backup)"' 2>/dev/null
   curl "${A[@]}" "$B/interfaces/ipv4" | jq -r '.interfaces[]?.ipv4 | select(.ip_assignment.zone=="WAN") | "  \(.name) [WAN] mode=\(.ip_assignment.mode|keys[0]) ip=\(.ip_assignment.mode[(.ip_assignment.mode|keys[0])].ip // "dynamic")"' 2>/dev/null

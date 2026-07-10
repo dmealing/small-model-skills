@@ -4,63 +4,72 @@
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-sms_identity "Read-only disk-space snapshot: filesystems/biggest dirs/common hogs. Proposes cleanup, never deletes."
+smols_identity "Read-only disk-space snapshot: filesystems/biggest dirs/common hogs. Proposes cleanup, never deletes."
 
-fs="$(sms_df)"
+fs="$(smols_df)"
 if [ -z "$fs" ]; then
-  echo "verdict: FAILED — could not read filesystem usage on this system"
-  sms_help "Check that this OS is supported (SMS_OS=$SMS_OS) and that df is available"
+  smols_verdict FAIL PROBE_FAILED "could not read filesystem usage on this system"
+  smols_help "Check that this OS is supported (SMOLS_OS=$SMOLS_OS) and that df is available"
   exit 1
 fi
+full_pct="$(smols_df_full_pct)"
 
-sms_sec "filesystems"
+smols_sec "filesystems"
 printf '%s\n' "$fs" | awk 'NR==1||/%/{print "  "$0}' | head -14
 
-target=$(sms_df_fullest)
+target=$(smols_df_fullest)
 target="${target:-/}"
-# Warn from here (parent) if no timeout binary caps the du walks below — sms_du_*'s 2>/dev/null hushes
-# sms_timeout's own note, so surface the honesty note where stderr reaches the user.
-sms_timeout_warn
-sms_sec "biggest dirs one level under $target"
-# Capture du's exit code separately: du -d1 can flush PARTIAL subtree totals before sms_timeout kills it,
+# Warn from here (parent) if no timeout binary caps the du walks below — smols_du_*'s 2>/dev/null hushes
+# smols_timeout's own note, so surface the honesty note where stderr reaches the user.
+smols_timeout_warn
+smols_sec "biggest dirs one level under $target"
+# Capture du's exit code separately: du -d1 can flush PARTIAL subtree totals before smols_timeout kills it,
 # so an empty result isn't the only timeout signal — a truncated, mis-rankable list can print too.
-raw="$(sms_du_top1 "$target")"; drc=$?
+raw="$(smols_du_top1 "$target")"; drc=$?
 dirs=""
 [ -n "$raw" ] && dirs="$(printf '%s\n' "$raw" | sort -rh -k1 | head -12 | awk '{sz=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",sz,$0}')"
 if [ -n "$dirs" ]; then
-  sms_is_timeout "$drc" && echo "  (PARTIAL — du was cut off by the ${SMS_DU_TIMEOUT:-20}s time limit before finishing;" \
-    "this ranking is INCOMPLETE and may be mis-ranked. Raise SMS_DU_TIMEOUT to try harder.)"
-  printf '%s\n' "$dirs" | sms_toon dirs size,path
-elif sms_is_timeout "$drc"; then
+  smols_is_timeout "$drc" && echo "  (PARTIAL — du was cut off by the ${SMOLS_DU_TIMEOUT:-20}s time limit before finishing;" \
+    "this ranking is INCOMPLETE and may be mis-ranked. Raise SMOLS_DU_TIMEOUT to try harder.)"
+  printf '%s\n' "$dirs" | smols_toon dirs size,path
+elif smols_is_timeout "$drc"; then
   echo "  (the tree under $target was too large to size within the time limit — see common hogs + the"
-  echo "   biggest-files command in the verdict below; raise SMS_DU_TIMEOUT to try harder)"
+  echo "   biggest-files command in the verdict below; raise SMOLS_DU_TIMEOUT to try harder)"
 else
   echo "  (nothing sizable found one level under $target, or it was not readable)"
 fi
 
-sms_sec "common space hogs"
+smols_sec "common space hogs"
 # /var/lib/docker is intentionally NOT du'd here — it's slow and 'docker system df' below reports it exactly.
 hog_rows=""
 for d in /var/log "$HOME/.cache" /var/cache /tmp; do
   [ -d "$d" ] || continue
-  sz="$(sms_du_summary "$d")"; [ -n "$sz" ] || sz="(too large — timed out)"
+  sz="$(smols_du_summary "$d")"; [ -n "$sz" ] || sz="(too large — timed out)"
   hog_rows="${hog_rows}${sz},$d
 "
 done
-printf '%s' "$hog_rows" | grep -v '^$' | sms_toon common_hogs size,path
+printf '%s' "$hog_rows" | grep -v '^$' | smols_toon common_hogs size,path
 # 'docker system df' queries the daemon — cap it like the du walks so a wedged daemon can't hang the report.
 if have docker; then
-  dkr="$(sms_timeout "${SMS_DOCKER_TIMEOUT:-8}" docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"; dkrc=$?
-  if sms_is_timeout "$dkrc"; then
-    sms_line "docker reclaimable" "(timed out — daemon may be wedged)"
+  dkr="$(smols_timeout "${SMOLS_DOCKER_TIMEOUT:-8}" docker system df 2>/dev/null | awk '/^Images|^Containers|^Local/{printf "%s=%s(%s) ",$1,$(NF-1),$NF}')"; dkrc=$?
+  if smols_is_timeout "$dkrc"; then
+    smols_line "docker reclaimable" "(timed out — daemon may be wedged)"
   else
-    sms_line "docker reclaimable" "$dkr"
+    smols_line "docker reclaimable" "$dkr"
   fi
 fi
 
-sms_sec "verdict"
-echo "  Space concentration is shown above. Safe things a human can reclaim after confirming:"
-sms_help \
+smols_sec "verdict"
+fullest="${target}"
+if [ -n "$full_pct" ] && [ "$full_pct" -ge "$DISK_CRIT_PCT" ] 2>/dev/null; then
+  smols_verdict FAIL DISK_CRITICAL "fullest filesystem is ${full_pct}% used (>= ${DISK_CRIT_PCT}%) -> out-of-space is imminent; reclaim now (see space concentration above)."
+elif [ -n "$full_pct" ] && [ "$full_pct" -ge "$DISK_WARN_PCT" ] 2>/dev/null; then
+  smols_verdict WARN DISK_HIGH "fullest filesystem is ${full_pct}% used (>= ${DISK_WARN_PCT}%) -> plan to reclaim space (see space concentration above)."
+else
+  smols_verdict OK NOMINAL "fullest filesystem is ${full_pct:-?}% used; no filesystem is near capacity."
+fi
+echo "  Safe things a human can reclaim after confirming:"
+smols_help \
   "package caches: sudo apt clean | pip cache purge | npm cache clean --force | brew cleanup" \
   "journal/log vacuuming: sudo journalctl --vacuum-size=200M (Linux) or manage /var/log manually (macOS)" \
   "docker (confirm first): docker system prune   (removes UNUSED images/containers/networks)" \

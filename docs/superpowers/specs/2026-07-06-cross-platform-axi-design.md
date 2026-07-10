@@ -32,12 +32,12 @@ feature — different part of the system (hooks/settings.json, not `bin/`) — a
 
 ## Architecture
 
-- `bin/lib/common.sh` detects the OS once — `SMS_OS=linux|macos` (WSL2 counts as `linux`) — and
+- `bin/lib/common.sh` detects the OS once — `SMOLS_OS=linux|macos` (WSL2 counts as `linux`) — and
   sources exactly one of `bin/lib/os-linux.sh` / `bin/lib/os-macos.sh`.
 - Both files implement the **same function names**, OS-appropriate bodies:
-  `sms_nproc`, `sms_loadavg`, `sms_meminfo`, `sms_top_procs_cpu`, `sms_top_procs_mem`,
-  `sms_default_gw`, `sms_default_iface`, `sms_ping`, `sms_failed_services`, `sms_recent_errors`,
-  `sms_df`, `sms_du`.
+  `smols_nproc`, `smols_loadavg`, `smols_meminfo`, `smols_top_procs_cpu`, `smols_top_procs_mem`,
+  `smols_default_gw`, `smols_default_iface`, `smols_ping`, `smols_failed_services`, `smols_recent_errors`,
+  `smols_df`, `smols_du`.
 - Every `bin/*` wrapper calls these helpers instead of raw platform commands. Verdict logic and
   digest structure don't change; **SKILL.md files don't change at all** — the OS split stays
   entirely below the model-facing layer (per the project's existing "scripts do the work"
@@ -50,15 +50,15 @@ feature — different part of the system (hooks/settings.json, not `bin/`) — a
 
 | Function | Linux (existing) | macOS (new) |
 |---|---|---|
-| `sms_nproc` | `nproc` | `sysctl -n hw.ncpu` |
-| `sms_loadavg` | `/proc/loadavg` | `sysctl -n vm.loadavg` (strip braces) |
-| `sms_meminfo` | `free -h` | `vm_stat` + `sysctl hw.memsize`, normalized to the same Mem/Swap digest shape |
-| `sms_top_procs_cpu/mem` | `ps -eo ... --sort=-%cpu` | `ps -eo pid,comm,%cpu,%mem -r` / `-m` (BSD sort flags) |
-| `sms_default_gw/iface` | `ip route show default` | `route -n get default` (parse `gateway`/`interface`) |
-| `sms_ping` | `ping -c2 -W1` | `ping -c2 -t1` (BSD `ping`'s per-packet timeout flag differs) |
-| `sms_failed_services` (`log-triage`) | `systemctl --failed` | `launchctl list \| awk '$2!=0{print $3, $2}'` (nonzero last-exit-status jobs — closest launchd equivalent, not identical semantics, noted in the digest) |
-| `sms_recent_errors` (`log-triage`) | `journalctl -p err -S -1h` | `log show --last 1h --predicate 'messageType == 16 OR messageType == 17'` (error/fault levels) |
-| `sms_df/sms_du` | `-x tmpfs ...` / `-d1` | macOS `df` has no `-x`; filter excluded fstypes with `awk` post-filter instead. `du -d 1` works identically on macOS's BSD `du` (verified on this machine) — no change needed there |
+| `smols_nproc` | `nproc` | `sysctl -n hw.ncpu` |
+| `smols_loadavg` | `/proc/loadavg` | `sysctl -n vm.loadavg` (strip braces) |
+| `smols_meminfo` | `free -h` | `vm_stat` + `sysctl hw.memsize`, normalized to the same Mem/Swap digest shape |
+| `smols_top_procs_cpu/mem` | `ps -eo ... --sort=-%cpu` | `ps -eo pid,comm,%cpu,%mem -r` / `-m` (BSD sort flags) |
+| `smols_default_gw/iface` | `ip route show default` | `route -n get default` (parse `gateway`/`interface`) |
+| `smols_ping` | `ping -c2 -W1` | `ping -c2 -t1` (BSD `ping`'s per-packet timeout flag differs) |
+| `smols_failed_services` (`log-triage`) | `systemctl --failed` | `launchctl list \| awk '$2!=0{print $3, $2}'` (nonzero last-exit-status jobs — closest launchd equivalent, not identical semantics, noted in the digest) |
+| `smols_recent_errors` (`log-triage`) | `journalctl -p err -S -1h` | `log show --last 1h --predicate 'messageType == 16 OR messageType == 17'` (error/fault levels) |
+| `smols_df/smols_du` | `-x tmpfs ...` / `-d1` | macOS `df` has no `-x`; filter excluded fstypes with `awk` post-filter instead. `du -d 1` works identically on macOS's BSD `du` (verified on this machine) — no change needed there |
 
 `sensors`/`nvidia-smi` in `sys-diag` stay behind the existing `have()` check on both platforms —
 no thermal read exists on Apple Silicon without `powermetrics` (needs sudo), so macOS prints
@@ -106,15 +106,15 @@ semantics (everything is read-only by design already).
 ## Repo layout changes
 
 ```
-bin/lib/common.sh       — OS detection (SMS_OS), sources os-linux.sh or os-macos.sh
+bin/lib/common.sh       — OS detection (SMOLS_OS), sources os-linux.sh or os-macos.sh
 bin/lib/os-linux.sh     — new: today's Linux-specific bodies, extracted as functions
 bin/lib/os-macos.sh     — new: macOS-specific bodies
-bin/sys-diag            — calls sms_* helpers instead of raw commands; adds identity header + TOON + help[]
+bin/sys-diag            — calls smols_* helpers instead of raw commands; adds identity header + TOON + help[]
 bin/log-triage          — same
 bin/net-diag            — same
 bin/disk-report         — same
 install.sh              — detect WSL2 (treat as linux); on bare Windows, print a clear message pointing at WSL2 setup instead of failing deep in a wrapper
-docs/authoring-small-model-skills.md — short addendum: new wrappers should call sms_* helpers for OS-varying primitives, and follow the AXI conventions above (identity header, TOON for list data, help[] hints, exit codes)
+docs/authoring-small-model-skills.md — short addendum: new wrappers should call smols_* helpers for OS-varying primitives, and follow the AXI conventions above (identity header, TOON for list data, help[] hints, exit codes)
 README.md               — note macOS + WSL2("Windows") support alongside Linux
 ```
 
@@ -124,7 +124,7 @@ platform-agnostic; no OS-specific behavior there).
 ## Testing
 
 - Each `os-*.sh` file is independently runnable/testable (same function names, swap which file
-  `common.sh` sources via `SMS_OS` override for manual testing without needing both OSes on hand).
+  `common.sh` sources via `SMOLS_OS` override for manual testing without needing both OSes on hand).
 - No CI runner for macOS exists in this repo today (per `.github/workflows`) — recommend adding a
   `macos-latest` job to run the wrappers and confirm they exit 0 (or a documented non-zero) and
   produce non-empty digests, not fixed asserted mock system state, since the mock state differs

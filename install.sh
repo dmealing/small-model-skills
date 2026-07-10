@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — set up small-model-skills on this machine.
 #   copies runtime (bin/lib/modules) -> $XDG_DATA_HOME/small-model-skills
-#   symlinks wrappers -> a bin dir on PATH (override with SMS_BINDIR)
+#   symlinks wrappers -> a bin dir on PATH (override with SMOLS_BINDIR)
 #   installs skills -> ~/.claude/skills
 #   seeds ~/.config/small-model-skills/config from config.example (if absent)
 #   checks dependencies
@@ -18,18 +18,18 @@ case "${OSTYPE:-}" in
     ;;
 esac
 case "$(uname -s 2>/dev/null)" in
-  Darwin) SMS_OS=macos ;;
-  *) SMS_OS=linux ;;  # includes WSL2 — same backend as native Linux
+  Darwin) SMOLS_OS=macos ;;
+  *) SMOLS_OS=linux ;;  # includes WSL2 — same backend as native Linux
 esac
 
 SRC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/small-model-skills"
-BINDIR="${SMS_BINDIR:-$HOME/.local/bin}"
+BINDIR="${SMOLS_BINDIR:-$HOME/.local/bin}"
 SKILLS="$HOME/.claude/skills"
 CFG="$HOME/.config/small-model-skills/config"
 
 echo "small-model-skills installer"
-echo "  OS     : $SMS_OS ($(uname -s 2>/dev/null))"
+echo "  OS     : $SMOLS_OS ($(uname -s 2>/dev/null))"
 echo "  source : $SRC"
 echo "  runtime: $DATA"
 echo "  bin    : $BINDIR   (must be on PATH)"
@@ -64,7 +64,7 @@ CC_HOME="$(dirname "$CFG")/cc-home"
 if compgen -G "$SRC/skills/*/" >/dev/null; then
   mkdir -p "$CC_HOME/skills"
   rm -f "$CC_HOME"/skills/* 2>/dev/null || true
-  # symlink each SMS skill so it stays in sync with the installed copy
+  # symlink each smols skill so it stays in sync with the installed copy
   for d in "$SRC"/skills/*/; do n="$(basename "$d")"; ln -sfn "$SKILLS/$n" "$CC_HOME/skills/$n"; done
   # Seed a credential-free, MCP-free minimal .claude.json so Claude Code doesn't re-prompt onboarding/theme
   # in this separate config home. Do NOT copy ~/.claude.json wholesale: it carries oauthAccount (credentials),
@@ -97,7 +97,7 @@ fi
 # 5. dependency check (OS-aware — macOS uses native tools that replace ip/systemctl/etc.)
 echo "-- dependencies --"
 common_deps="dig ping snmpwalk curl jq df du ps"
-if [ "$SMS_OS" = macos ]; then
+if [ "$SMOLS_OS" = macos ]; then
   os_deps="sysctl vm_stat route ifconfig launchctl log"
 else
   os_deps="ip systemctl journalctl free nproc"

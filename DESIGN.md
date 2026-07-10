@@ -113,10 +113,10 @@ Built on Linux originally; tested and now working natively on **macOS** as well 
 second real consumer/CI target, alongside the original Linux workstation). Full design:
 [`docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md`](docs/superpowers/specs/2026-07-06-cross-platform-axi-design.md).
 
-**Cross-platform.** OS-specific primitives live behind shared function names (`sms_nproc`,
-`sms_meminfo`, `sms_top_procs_cpu`, `sms_failed_services`, …) with one implementation file per OS —
+**Cross-platform.** OS-specific primitives live behind shared function names (`smols_nproc`,
+`smols_meminfo`, `smols_top_procs_cpu`, `smols_failed_services`, …) with one implementation file per OS —
 `bin/lib/os-linux.sh` (original behavior, unchanged) and `bin/lib/os-macos.sh`
-(`sysctl`/`vm_stat`/`route`/`launchctl`/`log show`). `bin/lib/common.sh` detects the OS once (`SMS_OS`)
+(`sysctl`/`vm_stat`/`route`/`launchctl`/`log show`). `bin/lib/common.sh` detects the OS once (`SMOLS_OS`)
 and sources the matching file. Wrapper logic, digest structure, and every `skills/*/SKILL.md` file stay
 untouched — the OS split lives entirely below the model-facing layer. Windows support means **WSL2**,
 not a native PowerShell port: WSL2 runs `os-linux.sh` unmodified; `install.sh` detects bare (non-WSL2)
@@ -130,7 +130,7 @@ indexing from `$(NF-1)`, not a literal `$2`. `du` without `-x` silently walked t
 mount (`~/Backups`, SMB) — the exact failure mode in [[nas-backup-lag-pattern]] memory, here triggered by
 a diagnostic script instead of a backup job. `ps`'s `comm` column can contain literal spaces on macOS
 (`"Microsoft Teams Helper (Renderer)"`), which broke naive whitespace-split parsing that happened to work
-on Linux by luck (Linux `comm` is normally one token) — fixed with a shared `sms_ps_rows` helper that
+on Linux by luck (Linux `comm` is normally one token) — fixed with a shared `smols_ps_rows` helper that
 joins from the *second* field to *N-2*, keeping the true first/last two columns intact regardless of
 how many words are in between. `launchctl list`'s failed-jobs analogue was **100% noise** unfiltered —
 every quiet, healthy launchd job on this machine reports `-9` (SIGKILL) as its last exit status as part
@@ -140,9 +140,9 @@ of completely normal agent teardown; only non-`-9`/`-15` exits are worth surfaci
 through Claude Code, never by a human directly), output follows
 **[AXI — Agent eXperience Interface](https://axi.md/)** conventions, created by
 **[Kun Chen](https://x.com/kunchenguid)** ([github.com/kunchenguid](https://github.com/kunchenguid)):
-- an identity header (`bin: ~/.local/bin/sys-diag` + one-line description) — `sms_identity` in `common.sh`
-- TOON for genuinely list-shaped data (process tables, failed-unit lists) — `sms_toon`
-- structured `help[]` next-step hints alongside the existing plain-English verdict sentence — `sms_help`
+- an identity header (`bin: ~/.local/bin/sys-diag` + one-line description) — `smols_identity` in `common.sh`
+- TOON for genuinely list-shaped data (process tables, failed-unit lists) — `smols_toon`
+- structured `help[]` next-step hints alongside the existing plain-English verdict sentence — `smols_help`
 - meaningful exit codes (`0` = diagnosis completed, even if it found a problem; `1` = the tool itself
   failed; `2` = usage error)
 
@@ -171,7 +171,7 @@ resource commitment on a laptop (it's taken this machine down before).
 By default it also runs **curated-skills mode**: `CLAUDE_CONFIG_DIR` is repointed at a config home
 (`install.sh`-built) exposing only this repo's skills, trading away the global `~/.claude` context
 (`CLAUDE.md`, custom `agents/`/`commands/`) for a smaller, cleaner context a weak model handles better.
-Opt out with `SMS_CURATED_SKILLS=0`; measured rationale in
+Opt out with `SMOLS_CURATED_SKILLS=0`; measured rationale in
 [`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
 
 ## Roadmap

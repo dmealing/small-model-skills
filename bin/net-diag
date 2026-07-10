@@ -4,57 +4,61 @@
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-sms_identity "Read-only snapshot: local link/DNS/internet reachability"
+smols_identity "Read-only snapshot: local link/DNS/internet reachability"
 
-links="$(sms_local_links | sort -k2,2r | head -8 | awk '{printf "%s,%s\n",$1,$2}')"
-if [ -z "$links" ] && [ -z "$(sms_host_addr)" ]; then
-  echo "verdict: FAILED — could not enumerate any network interface on this system"
-  sms_help "Check that this OS is supported (SMS_OS=$SMS_OS) and that ip/ifconfig are available"
+links="$(smols_local_links | sort -k2,2r | head -8 | awk '{printf "%s,%s\n",$1,$2}')"
+if [ -z "$links" ] && [ -z "$(smols_host_addr)" ]; then
+  smols_verdict FAIL PROBE_FAILED "could not enumerate any network interface on this system"
+  smols_help "Check that this OS is supported (SMOLS_OS=$SMOLS_OS) and that ip/ifconfig are available"
   exit 1
 fi
 
-sms_sec "local link"
-printf '%s\n' "$links" | sms_toon links iface,state
+smols_sec "local link"
+printf '%s\n' "$links" | smols_toon links iface,state
 
-sms_sec "addressing"
-sms_line "host address" "$(sms_host_addr)"
-sms_line "default gateway" "${GATEWAY_IP:-<unknown>}"
+smols_sec "addressing"
+smols_line "host address" "$(smols_host_addr)"
+smols_line "default gateway" "${GATEWAY_IP:-<unknown>}"
 
-sms_sec "reachability"
-if [ -n "$GATEWAY_IP" ] && sms_ping "$GATEWAY_IP"; then GWS=reachable; else GWS=UNREACHABLE; fi
-sms_line "gateway ${GATEWAY_IP:-<unknown>}" "$GWS"
+smols_sec "reachability"
+if [ -n "$GATEWAY_IP" ] && smols_ping "$GATEWAY_IP"; then GWS=reachable; else GWS=UNREACHABLE; fi
+smols_line "gateway ${GATEWAY_IP:-<unknown>}" "$GWS"
 NET=FAIL
-for t in "$DNS_PUBLIC" "$DNS_PUBLIC2"; do [ -n "$t" ] && sms_ping "$t" && { NET=PASS; break; }; done
-sms_line "internet (raw IP)" "$NET   (ping $DNS_PUBLIC, bypasses DNS)"
+for t in "$DNS_PUBLIC" "$DNS_PUBLIC2"; do [ -n "$t" ] && smols_ping "$t" && { NET=PASS; break; }; done
+smols_line "internet (raw IP)" "$NET   (ping $DNS_PUBLIC, bypasses DNS)"
 
-sms_sec "dns"
+smols_sec "dns"
 DNS_L=skip
-if [ -n "$DNS_LOCAL" ]; then DNS_L=FAIL; have dig && dig +short +time=1 +tries=1 cloudflare.com @"$DNS_LOCAL" 2>/dev/null | grep -qE '[0-9]' && DNS_L=PASS; fi
-DNS_P=FAIL; have dig && dig +short +time=1 +tries=1 cloudflare.com @"$DNS_PUBLIC" 2>/dev/null | grep -qE '[0-9]' && DNS_P=PASS
-DNS_S=FAIL; sms_resolve_system cloudflare.com && DNS_S=PASS
-[ "$DNS_L" != skip ] && sms_line "via local DNS $DNS_LOCAL" "$DNS_L"
-sms_line "via public $DNS_PUBLIC" "$DNS_P"
-sms_line "via system resolver" "$DNS_S"
+if [ -n "$DNS_LOCAL" ]; then
+  if have dig; then DNS_L=FAIL; dig +short +time=1 +tries=1 cloudflare.com @"$DNS_LOCAL" 2>/dev/null | grep -qE '[0-9]' && DNS_L=PASS
+  else DNS_L="skip (dig not installed)"; fi
+fi
+if have dig; then DNS_P=FAIL; dig +short +time=1 +tries=1 cloudflare.com @"$DNS_PUBLIC" 2>/dev/null | grep -qE '[0-9]' && DNS_P=PASS
+else DNS_P="skip (dig not installed)"; fi
+DNS_S=FAIL; smols_resolve_system cloudflare.com && DNS_S=PASS
+[ "$DNS_L" != skip ] && smols_line "via local DNS $DNS_LOCAL" "$DNS_L"
+smols_line "via public $DNS_PUBLIC" "$DNS_P"
+smols_line "via system resolver" "$DNS_S"
 
-sms_sec "verdict"
+smols_sec "verdict"
 if [ "$GWS" != reachable ]; then
-  echo "  LAN/LOCAL: gateway unreachable -> check cable/Wi-Fi/switch. Not an ISP problem."
-  sms_help "Check the physical/Wi-Fi connection, then re-run net-diag"
+  smols_verdict FAIL GATEWAY_UNREACHABLE "gateway unreachable -> check cable/Wi-Fi/switch. Not an ISP problem."
+  smols_help "Check the physical/Wi-Fi connection, then re-run net-diag"
 elif [ "$NET" = FAIL ]; then
-  echo "  ISP/WAN: gateway OK but no internet -> likely an ISP/WAN outage or failover. Next: run 'router-status'."
-  sms_help "Run 'router-status' for WAN/failover detail"
+  smols_verdict FAIL INTERNET_DOWN "gateway OK but no internet -> likely an ISP/WAN outage or failover. Next: run 'router-status'."
+  smols_help "Run 'router-status' for WAN/failover detail"
 elif [ "$DNS_L" = FAIL ] && [ "$DNS_P" = PASS ]; then
-  echo "  DNS: internet is up but local DNS ($DNS_LOCAL) is not resolving -> check your local DNS server."
-  sms_help "Check the local DNS server ($DNS_LOCAL) is running and reachable"
+  smols_verdict WARN DNS_LOCAL "internet is up but local DNS ($DNS_LOCAL) is not resolving -> check your local DNS server."
+  smols_help "Check the local DNS server ($DNS_LOCAL) is running and reachable"
 elif [ "$DNS_S" = FAIL ]; then
-  if [ "$SMS_OS" = macos ]; then
-    echo "  DNS: resolvers reachable but system resolution failing -> check System Settings > Network > DNS, or 'sudo dscacheutil -flushcache'."
-    sms_help "Check System Settings > Network > DNS servers, then 'sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'"
+  if [ "$SMOLS_OS" = macos ]; then
+    smols_verdict WARN DNS_SYSTEM "resolvers reachable but system resolution failing -> check System Settings > Network > DNS, or 'sudo dscacheutil -flushcache'."
+    smols_help "Check System Settings > Network > DNS servers, then 'sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'"
   else
-    echo "  DNS: resolvers reachable but system resolution failing -> check /etc/resolv.conf / systemd-resolved."
-    sms_help "Check /etc/resolv.conf and 'systemctl status systemd-resolved'"
+    smols_verdict WARN DNS_SYSTEM "resolvers reachable but system resolution failing -> check /etc/resolv.conf / systemd-resolved."
+    smols_help "Check /etc/resolv.conf and 'systemctl status systemd-resolved'"
   fi
 else
-  echo "  HEALTHY: local link, gateway, internet, and DNS all OK."
+  smols_verdict OK NOMINAL "local link, gateway, internet, and DNS all OK."
 fi
 exit 0

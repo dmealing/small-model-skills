@@ -4,56 +4,68 @@
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-ncpu=$(sms_nproc)
-load1=$(sms_loadavg)
-mem="$(sms_meminfo)"
+ncpu=$(smols_nproc)
+load1=$(smols_loadavg)
+mem="$(smols_meminfo)"
 
-sms_identity "Read-only snapshot: CPU/load/memory/top processes/thermal"
+smols_identity "Read-only snapshot: CPU/load/memory/top processes/thermal"
 
 if [ -z "$load1" ] && [ -z "$mem" ]; then
-  echo "verdict: FAILED — could not read load average or memory info on this system"
-  sms_help "Check that this OS is supported (SMS_OS=$SMS_OS) and that /proc or sysctl/vm_stat are readable"
+  smols_verdict FAIL PROBE_FAILED "could not read load average or memory info on this system"
+  smols_help "Check that this OS is supported (SMOLS_OS=$SMOLS_OS) and that /proc or sysctl/vm_stat are readable"
   exit 1
 fi
 
-sms_sec "load / cpu"
-sms_line "uptime" "$(uptime 2>/dev/null | sed 's/.*up /up /')"
-sms_line "load(1m) vs cores" "${load1:-?} / $ncpu"
+smols_sec "load / cpu"
+smols_line "uptime" "$(uptime 2>/dev/null | sed 's/.*up /up /')"
+smols_line "load(1m) vs cores" "${load1:-?} / $ncpu"
 
-sms_sec "memory"
+smols_sec "memory"
 printf '%s\n' "$mem" | sed 's/^/  /'
 
-sms_sec "top CPU processes"
-sms_top_procs_cpu 5 | sms_ps_rows | sms_toon procs_cpu pid,comm,cpu,mem
+smols_sec "top CPU processes"
+smols_top_procs_cpu 5 | smols_ps_rows | smols_toon procs_cpu pid,comm,cpu,mem
 
-sms_sec "top memory processes"
-sms_top_procs_mem 5 | sms_ps_rows | sms_toon procs_mem pid,comm,mem,cpu
+smols_sec "top memory processes"
+smols_top_procs_mem 5 | smols_ps_rows | smols_toon procs_mem pid,comm,mem,cpu
 
-sms_sec "thermal / gpu"
-if [ "$SMS_OS" = macos ]; then
+smols_sec "thermal / gpu"
+tmax=""   # hottest CPU/GPU temp in °C seen below (bare integer), for the THERMAL verdict
+if [ "$SMOLS_OS" = macos ]; then
   echo "  (thermal read requires 'sudo powermetrics' — not run automatically)"
 elif have sensors; then
-  sensors 2>/dev/null | grep -iE 'Tctl|Package id|Composite|Tccd|fan' | head -4 | sed 's/^/  /'
+  sens="$(sensors 2>/dev/null)"
+  printf '%s\n' "$sens" | grep -iE 'Tctl|Package id|Composite|Tccd|fan' | head -4 | sed 's/^/  /'
+  # hottest core/package temp (e.g. "+72.5°C") -> 72, ignoring fan RPM lines
+  tmax="$(printf '%s\n' "$sens" | grep -iE 'Tctl|Package id|Composite|Tccd' \
+    | grep -oE '\+[0-9]+\.[0-9]+°C' | tr -d '+°C' | cut -d. -f1 | sort -n | tail -1)"
 else
   echo "  (lm-sensors not installed)"
 fi
-have nvidia-smi && sms_line "gpu util/mem/temp" "$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader 2>/dev/null | head -1)"
+if have nvidia-smi; then
+  smols_line "gpu util/mem/temp" "$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader 2>/dev/null | head -1)"
+  gtemp="$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>/dev/null | sort -n | tail -1)"
+  [ -n "$gtemp" ] && { [ -z "$tmax" ] || [ "$gtemp" -gt "$tmax" ] 2>/dev/null; } && tmax="$gtemp"
+fi
 
-sms_sec "verdict"
-hi=$(sms_top_cpu_pct | awk '{print $1}' | cut -d. -f1)
-swapused=$(sms_swap_used_kb)
-if [ -n "$load1" ] && awk -v l="$load1" -v c="$ncpu" 'BEGIN{exit !(l > c*1.5)}'; then
-  echo "  HIGH LOAD: 1-min load ($load1) well above core count ($ncpu) -> something is saturating the CPU (see top CPU processes)."
-  sms_help "Inspect the top CPU process above; stop it if it's safe to, or let it finish if expected"
-elif [ "${hi:-0}" -ge 90 ] 2>/dev/null; then
-  echo "  CPU HOG: one process is using ~${hi}% of a core (see top CPU processes)."
-  sms_help "Inspect the top CPU process above; if it's stuck/runaway, stop and restart it"
-elif [ "${swapused:-0}" -gt 1048576 ] 2>/dev/null; then
-  echo "  MEMORY PRESSURE: heavy swap in use -> RAM may be exhausted (see top memory processes)."
-  sms_help "Close or restart the top memory process above, or add RAM/reduce concurrent workloads"
+smols_sec "verdict"
+hi=$(smols_top_cpu_pct | awk '{print $1}' | cut -d. -f1)
+swapused=$(smols_swap_used_kb)
+if [ -n "$load1" ] && awk -v l="$load1" -v c="$ncpu" -v f="$LOAD_WARN_FACTOR" 'BEGIN{exit !(l > c*f)}'; then
+  smols_verdict WARN HIGH_LOAD "1-min load ($load1) well above core count ($ncpu) -> something is saturating the CPU (see top CPU processes)."
+  smols_help "Inspect the top CPU process above; stop it if it's safe to, or let it finish if expected"
+elif [ "${hi:-0}" -ge "$CPU_HOG_PCT" ] 2>/dev/null; then
+  smols_verdict WARN CPU_HOG "one process is using ~${hi}% of a core (see top CPU processes)."
+  smols_help "Inspect the top CPU process above; if it's stuck/runaway, stop and restart it"
+elif [ "${swapused:-0}" -gt "$SWAP_WARN_KB" ] 2>/dev/null; then
+  smols_verdict WARN MEMORY_PRESSURE "heavy swap in use -> RAM may be exhausted (see top memory processes)."
+  smols_help "Close or restart the top memory process above, or add RAM/reduce concurrent workloads"
+elif [ -n "$tmax" ] && [ "${tmax:-0}" -ge "$TEMP_WARN_C" ] 2>/dev/null; then
+  smols_verdict WARN THERMAL "hottest CPU/GPU sensor is ${tmax}°C (>= ${TEMP_WARN_C}°C) -> check cooling/airflow and what's loading it."
+  smols_help "Confirm fans are spinning and vents are clear; correlate with the top CPU/GPU processes above"
 else
   if have iostat; then io="Run 'iostat -x 2' for disk I/O detail"; else io="Install sysstat for iostat, or profile one app, to check disk I/O"; fi
-  echo "  Nominal: load, memory, and per-process usage look normal. If it still feels slow, suspect disk I/O."
-  sms_help "$io"
+  smols_verdict OK NOMINAL "load, memory, per-process, and thermal all look normal. If it still feels slow, suspect disk I/O."
+  smols_help "$io"
 fi
 exit 0

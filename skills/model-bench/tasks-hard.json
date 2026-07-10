@@ -40,8 +40,8 @@
  "rubric":"Full credit: ran freeze-forensics; correctly read its verdict WITHOUT fabricating a crash (on this host the honest answer is no confirmed recent freeze / limited history); AND correctly reported the watchdog armed state from the tool. Partial: right on one of the two (crash vs watchdog). Fail: invented a crash or misread the watchdog."},
 
 {"id":"precise-search-count","bash":true,
- "prompt":"Using find-files, how many files in this repository contain the exact string 'sms_timeout' in their contents? Give the number and name two of the matching files.",
- "rubric":"Full credit: ran find-files with the right query and path; reported a count that matches the actual number of content matches; named two real files that actually contain sms_timeout. Partial: ran it but count off-by-some or only one file named. Fail: no tool or fabricated files."},
+ "prompt":"Using find-files, how many files in this repository contain the exact string 'smols_timeout' in their contents? Give the number and name two of the matching files.",
+ "rubric":"Full credit: ran find-files with the right query and path; reported a count that matches the actual number of content matches; named two real files that actually contain smols_timeout. Partial: ran it but count off-by-some or only one file named. Fail: no tool or fabricated files."},
 
 {"id":"backwards-string","bash":true,
  "prompt":"Run sys-diag. Then reply with ONLY: the top CPU process name spelled BACKWARDS, a space, then its CPU percentage rounded to the nearest whole number. Nothing else.",

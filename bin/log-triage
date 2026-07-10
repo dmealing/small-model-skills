@@ -5,52 +5,53 @@
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-sms_identity "Read-only snapshot: failed services + recent error-level log lines"
+smols_identity "Read-only snapshot: failed services + recent error-level log lines"
 
-sms_sec "failed services"
-failed="$(sms_failed_services)"
+smols_sec "failed services"
+failed="$(smols_failed_services)"
 if [ -n "$failed" ]; then
-  if [ "$SMS_OS" = macos ]; then
-    printf '%s\n' "$failed" | awk '{printf "%s,%s\n",$1,$2}' | sms_toon failed label,last_exit_status
+  if [ "$SMOLS_OS" = macos ]; then
+    printf '%s\n' "$failed" | awk '{printf "%s,%s\n",$1,$2}' | smols_toon failed label,last_exit_status
     echo "  (launchd has no exact 'failed unit' concept — these are jobs whose last exit status was non-zero, which can include expected one-shots)"
   else
-    printf '%s\n' "$failed" | sms_toon failed unit
+    printf '%s\n' "$failed" | smols_toon failed unit
   fi
 else
   echo "  none — no failed units"
 fi
 
 nerr=0
-sms_sec "recent errors (priority err+, last 1h)"
-errs="$(sms_recent_errors)"
+smols_sec "recent errors (priority err+, last 1h)"
+errs="$(smols_recent_errors)"
 if [ -n "$errs" ]; then
   printf '%s\n' "$errs" | tail -12 | sed 's/^/  /'
-  nerr=$(sms_recent_errors_count)
+  # count the lines we already captured — don't re-run the (slow, esp. on macOS) log query
+  nerr=$(printf '%s\n' "$errs" | grep -c .)
 else
   echo "  (none in the last hour, or logs unavailable — may need elevated permissions)"
 fi
 
-sms_sec "top error sources this boot/hour"
+smols_sec "top error sources this boot/hour"
 if [ -n "$errs" ]; then
-  sms_error_sources_this_boot | head -6 | awk '{cnt=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",cnt,$0}' | sms_toon sources count,source
+  smols_error_sources_this_boot | head -6 | awk '{cnt=$1; $1=""; sub(/^ /,""); printf "%s,%s\n",cnt,$0}' | smols_toon sources count,source
 else
   echo "  sources[0]{count,source}:"
   echo "  (none in the last hour, or logs unavailable — may need elevated permissions; see 'recent errors' above)"
 fi
 
-sms_sec "verdict"
+smols_sec "verdict"
 if [ -n "$failed" ]; then
-  if [ "$SMS_OS" = macos ]; then
-    echo "  Non-zero-exit launchd jobs present -> inspect: launchctl list <label>   and   log show --predicate 'subsystem == \"<label>\"' --last 1h"
-    sms_help "Run 'launchctl list <label>' on the entries above, and 'log show --last 1h --predicate '\''subsystem == \"<label>\"'\''' to see why"
+  if [ "$SMOLS_OS" = macos ]; then
+    smols_verdict WARN FAILED_SERVICES "non-zero-exit launchd jobs present -> inspect: launchctl list <label>   and   log show --predicate 'subsystem == \"<label>\"' --last 1h"
+    smols_help "Run 'launchctl list <label>' on the entries above, and 'log show --last 1h --predicate '\''subsystem == \"<label>\"'\''' to see why"
   else
-    echo "  FAILED units present -> inspect: systemctl status <unit>   and   journalctl -u <unit> -b --no-pager"
-    sms_help "Run 'systemctl status <unit>' on the entries above, and 'journalctl -u <unit> -b --no-pager' for detail"
+    smols_verdict WARN FAILED_SERVICES "failed units present -> inspect: systemctl status <unit>   and   journalctl -u <unit> -b --no-pager"
+    smols_help "Run 'systemctl status <unit>' on the entries above, and 'journalctl -u <unit> -b --no-pager' for detail"
   fi
 elif [ "${nerr:-0}" -gt 0 ] 2>/dev/null; then
-  echo "  No failed units, but ${nerr} error line(s) in the last hour -> drill into the top source above."
-  sms_help "Investigate the top source above with 'journalctl -u <name>' (Linux) or 'log show --predicate \"process == \\\"<name>\\\"\"' (macOS)"
+  smols_verdict WARN LOG_ERRORS "no failed units, but ${nerr} error line(s) in the last hour -> drill into the top source above."
+  smols_help "Investigate the top source above with 'journalctl -u <name>' (Linux) or 'log show --predicate \"process == \\\"<name>\\\"\"' (macOS)"
 else
-  echo "  Clean: no failed units and no errors in the last hour."
+  smols_verdict OK NOMINAL "no failed units and no errors in the last hour."
 fi
 exit 0

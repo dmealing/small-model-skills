@@ -23,13 +23,15 @@ run on, and to catch regressions when a model or prompt changes.
   are near-deterministic; treat single-digit point swings as noise.
 
 ## Runbook
-1. **Run the benchmark** (captures outputs; minutes per model):
+1. **Run the benchmark** (captures outputs; the default loads the local Ollama models, so allow time):
    ```sh
-   ./skills/model-bench/run-bench.sh \
-     ollama:qwen3-coder-cc ollama:qwen3-instruct-cc openrouter:z-ai/glm-5.2
+   ./skills/model-bench/run-bench.sh   # default = full 4-model comparison:
+   #   ollama:qwen3-coder-cc  ollama:qwen3-instruct-cc  openrouter:z-ai/glm-4.7  openrouter:z-ai/glm-5.2
+   ./skills/model-bench/run-bench.sh openrouter:z-ai/glm-4.7 openrouter:z-ai/glm-5.2   # cloud GLM only (no local load)
    ```
-   Models are `provider:modelid` where provider ∈ `ollama` (local), `zai`
-   (z.ai native), `openrouter`. Writes `results.jsonl` next to the script.
+   Models are `provider:modelid` where provider ∈ `ollama` (local), `openrouter`, or `zai`
+   (z.ai native). The default is the full comparison — pass a subset to bench fewer models.
+   Writes `results.jsonl` next to the script.
 2. **Judge + scorecard** (Gemini 2.5 Pro; ~1 min for 36 outputs):
    ```sh
    python3 skills/model-bench/judge.py
@@ -47,7 +49,10 @@ run on, and to catch regressions when a model or prompt changes.
   reads its Gemini key from `GEMINI_API_KEY` or `~/.config/small-model-skills/gemini.key`.
 
 ## Last result (2026-07-07)
-GLM-5.2 (34/36) > qwen3-coder-cc (26/36) > qwen3-instruct-cc (24/36). GLM-5.2's only
+Default corpus is 4 models: qwen3-coder-cc + qwen3-instruct-cc (local) and glm-4.7 +
+glm-5.2 (cloud). Last scored run was the 3-model set before glm-4.7 was added:
+**GLM-5.2 (34/36) > qwen3-coder-cc (26/36) > qwen3-instruct-cc (24/36).** GLM-5.2's only
 fail was `systems-reasoning` (claimed the system was NOT over-subscribed, contradicting
 the rubric) — the one task qwen3-coder got full. The qwens failed mostly on tool
-selection (wrong/no tool) and restraint, not raw reasoning.
+selection (wrong/no tool) and restraint, not raw reasoning. (glm-4.7 not yet scored —
+re-run the bench to fill it in.)

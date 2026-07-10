@@ -17,10 +17,10 @@ Two things, one branch:
 - **No host-specific values in the repo.** This is public. Every IP, path, hostname, kernel version,
   process name, or model name is **auto-detected** or read from `~/.config/small-model-skills/config`,
   never hardcoded. Ships with *generic* defaults; the leak guard enforces it.
-- **Cross-platform via helpers.** No OS-specific command called directly from a wrapper — add an `sms_*`
+- **Cross-platform via helpers.** No OS-specific command called directly from a wrapper — add an `smols_*`
   helper to **both** `bin/lib/os-linux.sh` and `bin/lib/os-macos.sh`. Where a probe is genuinely
   OS-only, the helper degrades honestly on the other OS (never a bare "command not found").
-- **AXI conventions.** `sms_identity` header, `sms_toon` for tables, `sms_help` hints, exit `0` (ran, even
+- **AXI conventions.** `smols_identity` header, `smols_toon` for tables, `smols_help` hints, exit `0` (ran, even
   if it found a problem) / `1` (tool couldn't gather data) / `2` (usage).
 
 ---
@@ -28,7 +28,7 @@ Two things, one branch:
 ## Part 1 — `smols` catalog CLI (`bin/smols`)
 
 **Source of truth:** installed skills (`~/.claude/skills/*/SKILL.md` frontmatter → `name`, `description`)
-+ the `bin/` wrappers (each already prints a one-line `sms_identity` description). No hardcoded list —
++ the `bin/` wrappers (each already prints a one-line `smols_identity` description). No hardcoded list —
 add a skill, it appears automatically.
 
 **Skill→wrapper mapping:** add one optional frontmatter key to each `SKILL.md`:
@@ -44,13 +44,13 @@ x-wrappers: [sys-diag]          # the command(s) this skill drives
 - `smols --toon` (list, machine-readable) — so the model can read the catalog too.
 
 **Properties:** pure bash + file reads (no network, no deps), colorized only on a TTY. Installed onto PATH
-by `install.sh`. Config: `SMS_SKILLS_DIR` (default `~/.claude/skills`), reuses `bin/lib` for `bin/` dir.
+by `install.sh`. Config: `SMOLS_SKILLS_DIR` (default `~/.claude/skills`), reuses `bin/lib` for `bin/` dir.
 
 ---
 
 ## Part 2 — the four skills
 
-Each = `skills/<name>/SKILL.md` (flat runbook, points at the wrapper) + `bin/<wrapper>` + new `sms_*`
+Each = `skills/<name>/SKILL.md` (flat runbook, points at the wrapper) + `bin/<wrapper>` + new `smols_*`
 helpers. All read-only.
 
 ### 2.1 `ollama-doctor` (wrapper `ollama-doctor`) — cross-platform
@@ -58,11 +58,11 @@ Diagnoses the local model stack (the offline brain itself).
 - **Daemon:** `GET {OLLAMA_URL}/api/version` (config `OLLAMA_URL`, default `http://localhost:11434`).
 - **Models + disk:** `GET /api/tags` (names, sizes, total).
 - **Loaded now:** `GET /api/ps` → model, `size_vram` vs `size` (GPU vs **CPU spill**), context, expiry.
-- **VRAM fit:** free VRAM via `sms_gpu_vram_free` → compare against loaded/named model size; flag "will
+- **VRAM fit:** free VRAM via `smols_gpu_vram_free` → compare against loaded/named model size; flag "will
   spill to CPU (slow)". Linux: `nvidia-smi`. macOS: report unified memory (Metal); no hard yes/no.
 - **Verdict:** daemon down · no models · model spilling to CPU · healthy. Proposes `ollama pull`, stop the
   spilling model, or a smaller quant — never runs them.
-- **New helpers:** `sms_gpu_vram_free`, `sms_gpu_name` (both backends).
+- **New helpers:** `smols_gpu_vram_free`, `smols_gpu_name` (both backends).
 
 ### 2.2 `freeze-forensics` (wrapper `freeze-forensics`) — **Linux/WSL-primary**, macOS-light
 Reconstructs the *last* hard freeze and confirms anti-freeze mitigations are still armed. Distinct from
@@ -81,8 +81,8 @@ Reconstructs the *last* hard freeze and confirms anti-freeze mitigations are sti
 - **macOS:** degrade to recent panic reports (`/Library/Logs/DiagnosticReports/*.panic`) + a note.
 - **sudo:** `dmidecode`/`ras-mc-ctl` want root — use `sudo -n` (non-interactive) and **degrade** if not
   allowed. Never prompt.
-- **New helpers:** `sms_boot_list`, `sms_prev_boot_kernel_tail`, `sms_watchdog_status`, `sms_reset_reason`,
-  `sms_mce_summary` (Linux real; macOS panic-report equivalents / honest "n/a").
+- **New helpers:** `smols_boot_list`, `smols_prev_boot_kernel_tail`, `smols_watchdog_status`, `smols_reset_reason`,
+  `smols_mce_summary` (Linux real; macOS panic-report equivalents / honest "n/a").
 
 ### 2.3 `runaway-hunter` (wrapper `runaway-hunter`) — cross-platform
 Focused companion to `system-triage`: adds the **age** dimension + zombie detection a snapshot lacks.
@@ -92,7 +92,7 @@ Focused companion to `system-triage`: adds the **age** dimension + zombie detect
 - **Known offenders:** match `comm`/args against `RUNAWAY_OFFENDERS` (config; a small *generic* default of
   common leak patterns like runaway test-runners — no machine-specific names shipped).
 - Proposes `SIGTERM` then `SIGKILL`; runs nothing.
-- **New helper:** `sms_proc_age_secs` / `sms_procs_aged` (Linux `ps -o etimes`; macOS parses `etime`).
+- **New helper:** `smols_proc_age_secs` / `smols_procs_aged` (Linux `ps -o etimes`; macOS parses `etime`).
 
 ### 2.4 `docker-hygiene` (wrapper `docker-hygiene`) — cross-platform
 Extends `disk-report` into Docker internals. If Docker is absent/down: one clean line, exit 0.

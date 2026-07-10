@@ -174,7 +174,7 @@ By default `claude-local` also runs in **curated-skills mode**: it points `CLAUD
 home (built by `install.sh`, step 3) that exposes **only this repo's skills**, giving a small model a
 smaller, cleaner context and tool surface. A side effect is that your global `~/.claude` context —
 `CLAUDE.md` directives, custom `agents/`, and `commands/` — does **not** load in this mode. Opt out with
-`SMS_CURATED_SKILLS=0` to run against your full `~/.claude` config instead. Measured rationale:
+`SMOLS_CURATED_SKILLS=0` to run against your full `~/.claude` config instead. Measured rationale:
 [`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
 
 ### Which model? (what the benchmark says)
@@ -195,8 +195,10 @@ measures that trade before you bet on a model:
 
 ```bash
 cd skills/model-bench
-./run-bench.sh ollama:qwen3-coder-cc openrouter:z-ai/glm-5.2   # run models over the hard-task corpus
-python3 judge.py                                                 # blind Gemini judge -> scorecard
+./run-bench.sh                          # full 4-model comparison (2 local qwen + 2 cloud GLM; loads local models)
+./run-bench.sh openrouter:z-ai/glm-5.2  # cloud GLM-5.2 only (no local load)
+./run-bench.sh ollama:qwen3-coder-cc openrouter:z-ai/glm-5.2  # a subset (loads the named local model)
+python3 judge.py                        # blind Gemini judge -> scorecard
 ```
 
 ### 3. Install the skills
@@ -205,7 +207,7 @@ git clone <this-repo> && cd small-model-skills
 ./install.sh            # copies skills -> ~/.claude/skills, links wrappers, seeds a config,
                         # and builds a curated skills home for claude-local
 ```
-Override the wrapper location with `SMS_BINDIR=~/bin ./install.sh` if `~/.local/bin` isn't on your PATH.
+Override the wrapper location with `SMOLS_BINDIR=~/bin ./install.sh` if `~/.local/bin` isn't on your PATH.
 
 ### 4. Configure for your machine
 Edit `~/.config/small-model-skills/config` (created by the installer) — gateway IP, DNS, WAN interface
@@ -247,7 +249,7 @@ Claude Code sessions (checks `ANTHROPIC_BASE_URL` first), but touches your globa
 Note: default curated-skills mode (step 2) reads settings from the curated home, not `~/.claude`, and
 `install.sh` copies your `~/.claude/settings.json` into it. So after adding the hook, re-run `./install.sh`
 to sync it in (or add the same block directly to `$CC_HOME/settings.json`, default
-`~/.config/small-model-skills/cc-home/settings.json`). With `SMS_CURATED_SKILLS=0`, `~/.claude/settings.json`
+`~/.config/small-model-skills/cc-home/settings.json`). With `SMOLS_CURATED_SKILLS=0`, `~/.claude/settings.json`
 is used directly and no extra step is needed.
 
 ## Routers

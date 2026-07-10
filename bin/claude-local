@@ -7,9 +7,9 @@
 # real resource risk, so there's no shortcut — pass the full tag explicitly if you want one.
 set -euo pipefail
 
-SMS_CONFIG="${SMS_CONFIG:-$HOME/.config/small-model-skills/config}"
+SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 # shellcheck disable=SC1090
-[ -r "$SMS_CONFIG" ] && . "$SMS_CONFIG"
+[ -r "$SMOLS_CONFIG" ] && . "$SMOLS_CONFIG"
 
 : "${LOCAL_MODEL_DEFAULT:=qwen3-coder-cc}"
 
@@ -22,15 +22,15 @@ esac
 # Curated-skills mode: point Claude Code at a config home that exposes ONLY the small-model-skills,
 # not every user skill. A small model's tool-selection degrades as the skill/tool count grows, and each
 # unused skill's description is dead weight in an already-tight context (Claude Code's own system prompt is
-# ~27-30K tokens). install.sh builds this home. Opt out with SMS_CURATED_SKILLS=0. Falls back silently to
+# ~27-30K tokens). install.sh builds this home. Opt out with SMOLS_CURATED_SKILLS=0. Falls back silently to
 # the normal config if the home was never built.
 # NOTE: this relocates CLAUDE_CONFIG_DIR to $CC_HOME, so global ~/.claude context — CLAUDE.md directives,
 # custom agents/, and commands/ — does NOT load in curated mode. That is deliberate: a weak model does
-# better with a small, clean context than with a full frontier-model setup. Use SMS_CURATED_SKILLS=0 to run
+# better with a small, clean context than with a full frontier-model setup. Use SMOLS_CURATED_SKILLS=0 to run
 # against the full ~/.claude config instead.
-CC_HOME="${SMS_CC_HOME:-$HOME/.config/small-model-skills/cc-home}"
+CC_HOME="${SMOLS_CC_HOME:-$HOME/.config/small-model-skills/cc-home}"
 cc_env=()
-if [ "${SMS_CURATED_SKILLS:-1}" != 0 ] && [ -d "$CC_HOME/skills" ]; then
+if [ "${SMOLS_CURATED_SKILLS:-1}" != 0 ] && [ -d "$CC_HOME/skills" ]; then
   cc_env=(CLAUDE_CONFIG_DIR="$CC_HOME")
 fi
 
