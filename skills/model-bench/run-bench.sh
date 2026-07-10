@@ -2,9 +2,15 @@
 # model-bench runner — run each model over the hard-task corpus, capture full output.
 #
 # Models are passed as `provider:modelid` args:
-#   ollama:qwen3-coder-cc        local Ollama (no key)
-#   zai:glm-5.2                  z.ai native Anthropic endpoint (key: zai.env)
-#   openrouter:z-ai/glm-5.2      OpenRouter Anthropic endpoint (key: openrouter.env)
+#   ollama:qwen3-coder-cc        local Ollama — qwen3-coder (the repo's offline default)
+#   ollama:qwen3-instruct-cc     local Ollama — qwen3-instruct (the non-coder qwen)
+#   openrouter:z-ai/glm-4.7      OpenRouter — GLM-4.7
+#   openrouter:z-ai/glm-5.2      OpenRouter — GLM-5.2
+#   zai:glm-5.2                  z.ai native endpoint alternative (key: zai.env)
+#
+# With NO args, runs the full 4-model comparison (2 local qwen + 2 cloud GLM) — that's
+# what this bench is for. Note it loads the local Ollama models and takes a while, so run
+# it when you want a real measurement, not from CI. Pass explicit specs to bench a subset.
 #
 # Output: results.jsonl next to this script — one {model,id,secs,output} row per run.
 set -euo pipefail
@@ -13,7 +19,7 @@ TASKS="$HERE/tasks-hard.json"
 OUT="$HERE/results.jsonl"
 CC_HOME="${CC_HOME:-$HOME/.config/small-model-skills/cc-home}"
 MODELS=("$@")
-[ ${#MODELS[@]} -gt 0 ] || MODELS=(ollama:qwen3-coder-cc ollama:qwen3-instruct-cc openrouter:z-ai/glm-5.2)
+[ ${#MODELS[@]} -gt 0 ] || MODELS=(ollama:qwen3-coder-cc ollama:qwen3-instruct-cc openrouter:z-ai/glm-4.7 openrouter:z-ai/glm-5.2)
 
 or_key() { sed -n 's/^OPENROUTER_API_KEY=//p' "$HOME/.config/small-model-skills/openrouter.env" 2>/dev/null | head -1; }
 zai_key() { sed -n 's/^ZAI_API_KEY=//p' "$HOME/.config/small-model-skills/zai.env" 2>/dev/null | head -1; }

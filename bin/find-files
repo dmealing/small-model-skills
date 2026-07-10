@@ -8,7 +8,7 @@
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-sms_identity "Read-only: find files by name or content (ripgrep/fd, falls back to grep/find)"
+smols_identity "Read-only: find files by name or content (ripgrep/fd, falls back to grep/find)"
 
 q="${1:-}"
 [ -n "$q" ] || { echo "usage: find-files <query> [path]   (query is a LITERAL substring; searches file names AND contents)"; exit 2; }
@@ -19,64 +19,64 @@ NT="${SEARCH_NAME_TIMEOUT:-15}"
 CT="${SEARCH_CONTENT_TIMEOUT:-20}"
 # a name-search binary: fd (or fdfind on Debian/Ubuntu), else find
 FD=""; have fd && FD=fd; [ -z "$FD" ] && have fdfind && FD=fdfind
-# Warn from here (parent) if no timeout binary caps the searches below — sms_timeout's own note is hushed
+# Warn from here (parent) if no timeout binary caps the searches below — smols_timeout's own note is hushed
 # by the 2>/dev/null on each search invocation, so surface the honesty note where stderr reaches the user.
-sms_timeout_warn
+smols_timeout_warn
 
-sms_line "query" "$q"
-sms_line "path"  "$path"
+smols_line "query" "$q"
+smols_line "path"  "$path"
 
-sms_sec "files with a matching NAME"
+smols_sec "files with a matching NAME"
 # -F/--fixed-strings: literal query (consistent with find's -iname glob). -I/-H: search gitignored + hidden
 # files too (whole-machine search), but prune .git/node_modules/.cache — the same noise dirs the find
 # fallback skips, so name results don't depend on which tool is installed.
 if [ -n "$FD" ]; then
-  names="$(sms_timeout "$NT" "$FD" -i -H -I -F -t f -E .git -E node_modules -E .cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; nrc=$?
+  names="$(smols_timeout "$NT" "$FD" -i -H -I -F -t f -E .git -E node_modules -E .cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; nrc=$?
 else
   # find fallback: case-insensitive LITERAL name match. Escape glob metachars (\ * ? [ ]) in the query so
   # they match themselves like fd/rg/grep's -F — otherwise 'array[0]' or 'test*' would be a glob. Then
   # skip the usual noise dirs.
   qg="$(printf '%s' "$q" | sed -e 's/\\/\\\\/g' -e 's/\*/\\*/g' -e 's/?/\\?/g' -e 's/\[/\\[/g' -e 's/\]/\\]/g')"
-  names="$(sms_timeout "$NT" find "$path" \( -name .git -o -name node_modules -o -name .cache \) -prune -o \
+  names="$(smols_timeout "$NT" find "$path" \( -name .git -o -name node_modules -o -name .cache \) -prune -o \
            -type f -iname "*$qg*" -print 2>/dev/null | head -"$MAX")"; nrc=$?
 fi
-printf '%s\n' "$names" | grep -v '^$' | sms_toon name_matches path
+printf '%s\n' "$names" | grep -v '^$' | smols_toon name_matches path
 
-sms_sec "files whose CONTENTS match"
+smols_sec "files whose CONTENTS match"
 # -F: literal query. --no-ignore/--hidden: search gitignored + hidden files too; prune
 # .git/node_modules/.cache (same noise dirs as the name search + find fallback). -I (grep) skips binary
 # files, matching rg -l's default so a compiled binary embedding the query isn't listed as a hit.
 if have rg; then
-  content="$(sms_timeout "$CT" rg -l -i -F --hidden --no-ignore --no-messages -g '!.git' -g '!node_modules' -g '!.cache' -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
+  content="$(smols_timeout "$CT" rg -l -i -F --hidden --no-ignore --no-messages -g '!.git' -g '!node_modules' -g '!.cache' -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
 else
-  content="$(sms_timeout "$CT" grep -rlIiF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
+  content="$(smols_timeout "$CT" grep -rlIiF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.cache -- "$q" "$path" 2>/dev/null | head -"$MAX")"; crc=$?
 fi
-printf '%s\n' "$content" | grep -v '^$' | sms_toon content_matches path
+printf '%s\n' "$content" | grep -v '^$' | smols_toon content_matches path
 
-sms_sec "verdict"
+smols_sec "verdict"
 # grep -c prints 0 on no match (and exits 1 — that's fine here); don't append a second 0
 nn=$(printf '%s' "$names"   | grep -c .); nn=${nn:-0}
 nc=$(printf '%s' "$content" | grep -c .); nc=${nc:-0}
-# sms_timeout kills the search (exit 124/143/137) when it runs past the time cap. Distinguish that from a
+# smols_timeout kills the search (exit 124/143/137) when it runs past the time cap. Distinguish that from a
 # genuine no-match so we don't tell the user a file is absent when the search was actually cut off.
-if sms_is_timeout "$nrc" || sms_is_timeout "$crc"; then
+if smols_is_timeout "$nrc" || smols_is_timeout "$crc"; then
   parts=""; knobs=""
-  if sms_is_timeout "$nrc"; then parts="name"; knobs="SEARCH_NAME_TIMEOUT (now ${NT}s)"; fi
-  if sms_is_timeout "$crc"; then
+  if smols_is_timeout "$nrc"; then parts="name"; knobs="SEARCH_NAME_TIMEOUT (now ${NT}s)"; fi
+  if smols_is_timeout "$crc"; then
     [ -n "$parts" ] && parts="$parts and content" || parts="content"
     [ -n "$knobs" ] && knobs="$knobs / SEARCH_CONTENT_TIMEOUT (now ${CT}s)" || knobs="SEARCH_CONTENT_TIMEOUT (now ${CT}s)"
   fi
   echo "  CUT OFF by the time limit before finishing the $parts search under $path — results are INCOMPLETE,"
   echo "  not a definitive 'no matches'. So far: $nn file(s) by name, $nc by content."
-  sms_help "Narrow it: pass a more specific path so there's less of the tree to walk, then re-run" \
+  smols_help "Narrow it: pass a more specific path so there's less of the tree to walk, then re-run" \
            "Or raise the limit: $knobs, then re-run"
 elif [ "$nn" -eq 0 ] && [ "$nc" -eq 0 ]; then
   echo "  No matches for '$q' under $path."
-  sms_help "Widen the search: pass a broader path (e.g. \$HOME), or try a shorter/looser query" \
+  smols_help "Widen the search: pass a broader path (e.g. \$HOME), or try a shorter/looser query" \
            "Only the current dir was searched unless SEARCH_ROOT is set or you passed a path"
 else
   echo "  Found $nn file(s) by name and $nc by content (capped at $MAX each)."
-  sms_help "See matching lines in a content hit: rg -n -i '$q' <file>   (or grep -ni '$q' <file>)" \
+  smols_help "See matching lines in a content hit: rg -n -i '$q' <file>   (or grep -ni '$q' <file>)" \
            "Open a hit: your editor <file>. This tool only searches — it changes nothing."
 fi
 exit 0

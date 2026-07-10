@@ -13,7 +13,7 @@ Create `modules/router/<vendor>.sh` defining one function:
 ```bash
 router_module_enrich(){
   # Called after the SNMP table + verdict are printed.
-  # Read-only ONLY. Print a short, human-readable block. Helpers available: have, sms_sec, sms_line.
+  # Read-only ONLY. Print a short, human-readable block. Helpers available: have, smols_sec, smols_line.
   # Config available: ROUTER_HOST, ROUTER_API_PORT, SNMP_COMMUNITY, ROUTER_CRED_FILE, ROUTER_CRED_ITEM.
   # Degrade gracefully (missing creds/tools/endpoints must not error).
 }

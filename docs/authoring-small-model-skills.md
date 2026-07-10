@@ -64,17 +64,32 @@ best at the very start/end of context and degrades in the middle, worse for weak
   auto-reboot", not "protected."
 - **Scripts solve, not punt:** handle their own errors with specific messages; no unexplained magic numbers.
 - **Cross-platform primitives:** never call an OS-specific command directly (`nproc`, `ip`, `systemctl`,
-  GNU-flavored `ps`/`df`/`du` flags, …) — call the `sms_*` helper in `bin/lib/common.sh` instead
-  (`sms_nproc`, `sms_loadavg`, `sms_top_procs_cpu`, `sms_default_gw`, `sms_failed_services`, …). Add a new
+  GNU-flavored `ps`/`df`/`du` flags, …) — call the `smols_*` helper in `bin/lib/common.sh` instead
+  (`smols_nproc`, `smols_loadavg`, `smols_top_procs_cpu`, `smols_default_gw`, `smols_failed_services`, …). Add a new
   helper to *both* `bin/lib/os-linux.sh` and `bin/lib/os-macos.sh` if one doesn't exist yet — never fork
   wrapper logic per-OS. A silent-degrade bug beats a missing binary: verify field positions against real
   output on both platforms (BSD/GNU `ps`, `df`, `vm_stat` field counts differ by label length — index from
   the end, not a fixed position, when a line's word count varies).
 - **AXI conventions** — every `bin/*` wrapper follows [AXI](https://axi.md/): an identity header
-  (`sms_identity "one-line description"` as the first thing printed), TOON for list-shaped data
-  (`... | sms_toon <name> <fields>`), structured `help[N]:` hints alongside the prose verdict (`sms_help
+  (`smols_identity "one-line description"` as the first thing printed), TOON for list-shaped data
+  (`... | smols_toon <name> <fields>`), structured `help[N]:` hints alongside the prose verdict (`smols_help
   "do this" "or this"`), and meaningful exit codes (`0` diagnosis ran even if it found a problem, `1` the
   tool itself failed to gather any data, `2` usage error).
+- **The verdict contract** — every wrapper ends on exactly ONE machine-greppable line, emitted with the
+  `smols_verdict` helper: `verdict: <OK|WARN|FAIL> <TAG> — <one-sentence prose>` (column 0). This is what
+  makes each wrapper double as a monitoring probe (`smon` greps `^verdict:` and alerts on status/tag
+  transitions), so the vocabulary is fixed:
+  - `OK` — nominal/healthy, nothing to do.
+  - `WARN` — a real problem found that warrants attention but isn't an emergency.
+  - `FAIL` — a critical state, OR the probe itself couldn't run (a broken probe = lost visibility, which
+    for a monitor is itself alert-worthy; use tag `PROBE_FAILED`). A watched daemon being down is also
+    `FAIL` (e.g. `DAEMON_DOWN`).
+
+  `TAG` is a short `SCREAMING_SNAKE` label the monitor keys/escalates on (`HIGH_LOAD`, `DISK_CRITICAL`,
+  `NOMINAL`, …). The verdict STATUS is independent of the exit code — a `WARN` still exits `0` (the
+  diagnosis ran). Keep the no-overclaim rule above: the prose still labels uncertainty; the tag just makes
+  the headline greppable. Threshold values behind WARN/FAIL live in config (`DISK_WARN_PCT`, `CPU_HOG_PCT`,
+  `TEMP_WARN_C`, …), never hardcoded, so each host can tune them.
 
 ## 5. Tool-call reliability
 - **Fewer tools is the biggest lever.** Small-model tool-calling accuracy collapses as the tool/schema
