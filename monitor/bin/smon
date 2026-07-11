@@ -44,6 +44,10 @@ SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
 : "${SMON_QUIET_END:=7}"
 : "${SMON_WARN_SUSTAIN:=2}"                 # consecutive sweeps a WARN must persist before pushing
 : "${SMON_PROBE_TIMEOUT:=120}"              # seconds; defense against hung probes holding flock
+: "${SMON_FAIL_REMIND_SWEEPS:=0}"          # re-push a still-standing FAIL every N sweeps (0 = never remind)
+: "${SMON_DIGEST_HOUR:=}"                   # hour (0-23) to push a once-daily status digest (blank = off)
+: "${SMON_ENRICH_FAIL:=0}"                  # 1 = also enrich FAIL messages; 0 = ship FAIL raw (no model wait)
+: "${SMON_FALLBACK_NOTIFY:=}"              # backends to try ONLY when a primary ha-push fails (e.g. "stdout")
 : "${SMON_STATE_DIR:=$HOME/.local/state/smon}"
 : "${SMON_LOG:=$HOME/logs/smon.log}"
 : "${SMON_HOST:=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo host)}"
@@ -94,27 +98,59 @@ notify_send(){
   if [ "$status" = WARN ] && in_quiet_hours; then
     log "notify deferred (quiet hours): $title"; return 1
   fi
+  local any_transport_failed=0
   for b in $SMON_NOTIFY; do
-    case "$b" in
-      stdout)  printf '[smon %s] %s\n  %s\n' "$status" "$title" "$body" ;;
-      ha-push) notify_ha "$title" "$body" ;;
-      kuma)    : ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
-      *) log "unknown notify backend '$b'" ;;
-    esac
+    _notify_one "$b" "$status" "$title" "$body" || any_transport_failed=1
   done
-  return 0   # dispatched (a per-backend transport failure is logged in notify_ha, not fatal here)
+  # If a primary backend's transport failed (e.g. HA down = the very infra we monitor), try the
+  # fallback backends so a real alert still gets out through a different path.
+  if [ "$any_transport_failed" = 1 ] && [ -n "$SMON_FALLBACK_NOTIFY" ]; then
+    log "primary notify failed — trying fallback: $SMON_FALLBACK_NOTIFY"
+    for b in $SMON_FALLBACK_NOTIFY; do _notify_one "$b" "$status" "$title" "$body" || true; done
+  fi
+  return 0   # the alert was attempted (the caller treats "attempted" as dispatched for state)
 }
 
+# _notify_one <backend> <status> <title> <body> — dispatch to one backend; return non-zero if
+# that backend's transport failed (so notify_send can fall back).
+_notify_one(){
+  local b="$1" status="$2" title="$3" body="$4"
+  case "$b" in
+    stdout)  printf '[smon %s] %s\n  %s\n' "$status" "$title" "$body"; return 0 ;;
+    ha-push) notify_ha "$title" "$body" ;;   # returns non-zero on HTTP failure
+    matrix)  notify_matrix "$title" "$body" ;;
+    kuma)    return 0 ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
+    *) log "unknown notify backend '$b'"; return 0 ;;
+  esac
+}
+
+# notify_ha — returns 0 on a 200, non-zero otherwise (so notify_send can fall back).
 notify_ha(){
   local title="$1" body="$2" tok url code
   tok="$(ha_token)"
   [ -n "$SMON_HA_URL" ] && [ -n "$SMON_HA_TARGET" ] && [ -n "$tok" ] || {
-    log "ha-push skipped (missing SMON_HA_URL / SMON_HA_TARGET / token)"; return; }
+    log "ha-push skipped (missing SMON_HA_URL / SMON_HA_TARGET / token)"; return 1; }
   url="${SMON_HA_URL%/}/api/services/notify/${SMON_HA_TARGET#notify.}"
   code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST "$url" \
     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
     --data "$(jq -n --arg title "$title" --arg message "$body" '{title:$title,message:$message}')" 2>/dev/null)
-  if [ "$code" = 200 ]; then log "ha-push ok: $title"; else log "ha-push FAILED (HTTP $code): $title"; fi
+  if [ "$code" = 200 ]; then log "ha-push ok: $title"; return 0; else log "ha-push FAILED (HTTP $code): $title"; return 1; fi
+}
+
+# notify_matrix — post to a Matrix room via the client-server API. Config: SMON_MATRIX_URL
+# (homeserver base), SMON_MATRIX_TOKEN(_CMD), SMON_MATRIX_ROOM (!id:server). A good FALLBACK
+# because it rides different infra than HA. Returns 0 on success, non-zero otherwise.
+notify_matrix(){
+  local title="$1" body="$2" tok url code
+  : "${SMON_MATRIX_URL:=}"; : "${SMON_MATRIX_ROOM:=}"; : "${SMON_MATRIX_TOKEN:=}"; : "${SMON_MATRIX_TOKEN_CMD:=}"
+  tok="$SMON_MATRIX_TOKEN"; [ -z "$tok" ] && [ -n "$SMON_MATRIX_TOKEN_CMD" ] && tok="$(smols_timeout 10 bash -c "$SMON_MATRIX_TOKEN_CMD" 2>/dev/null)"
+  [ -n "$SMON_MATRIX_URL" ] && [ -n "$SMON_MATRIX_ROOM" ] && [ -n "$tok" ] || {
+    log "matrix skipped (missing SMON_MATRIX_URL / SMON_MATRIX_ROOM / token)"; return 1; }
+  url="${SMON_MATRIX_URL%/}/_matrix/client/v3/rooms/${SMON_MATRIX_ROOM}/send/m.room.message"
+  code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST "$url" \
+    -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+    --data "$(jq -n --arg body "$title"$'\n'"$body" '{msgtype:"m.text",body:$body}')" 2>/dev/null)
+  if [ "$code" = 200 ]; then log "matrix ok: $title"; return 0; else log "matrix FAILED (HTTP $code): $title"; return 1; fi
 }
 
 heartbeat(){
@@ -193,10 +229,17 @@ eval_probe(){
   local do_alert=0 kind=""
 
   if [ "$key_now" = "$key_prev" ]; then
-    # unchanged state. WARN may still be "maturing" toward its sustain threshold.
+    # unchanged state.
     if [ "$V_STATUS" = WARN ] && [ "$p_alerted" = 0 ]; then
+      # WARN still "maturing" toward its sustain threshold.
       p_count=$((p_count+1))
       if [ "$p_count" -ge "$SMON_WARN_SUSTAIN" ]; then do_alert=1; kind=warn; fi
+    elif [ "$V_STATUS" = FAIL ] && [ "$p_alerted" = 1 ] && [ "$SMON_FAIL_REMIND_SWEEPS" -gt 0 ]; then
+      # A still-standing FAIL: re-remind every SMON_FAIL_REMIND_SWEEPS sweeps so a missed first
+      # push (or a genuinely persistent failure) doesn't fall silent. p_count counts sweeps since
+      # the last FAIL alert.
+      p_count=$((p_count+1))
+      if [ "$p_count" -ge "$SMON_FAIL_REMIND_SWEEPS" ]; then do_alert=1; kind=fail; p_count=0; fi
     fi
   else
     # transition (status OR tag changed). p_since records when the current state began (not yet
@@ -205,7 +248,7 @@ eval_probe(){
     # (otherwise B inherits A's alerted=1 and, being "unchanged" next sweep, never matures/pushes).
     p_alerted=0
     case "$V_STATUS" in
-      FAIL) do_alert=1; kind=fail; p_count=1; p_since=$now ;;
+      FAIL) do_alert=1; kind=fail; p_count=0; p_since=$now ;;   # p_count counts sweeps toward the next reminder
       WARN) p_since=$now; p_count=1
             [ "$SMON_WARN_SUSTAIN" -le 1 ] && { do_alert=1; kind=warn; } ;;
       OK)   # recovery only if we had alerted on the state we just left
@@ -218,7 +261,10 @@ eval_probe(){
   if [ "$do_alert" = 1 ]; then
     local title body status_for_notify="$V_STATUS" dispatched=0
     case "$kind" in
-      fail)     title="🔴 $SMON_HOST: $V_TAG"; body="$(enrich "$out" "$V_PROSE")" ;;
+      # FAIL ships raw by default: a critical alert should not wait up to 60s on the enrichment
+      # model (set SMON_ENRICH_FAIL=1 to enrich anyway). WARN is enriched — it's less urgent.
+      fail)     title="🔴 $SMON_HOST: $V_TAG"
+                if [ "$SMON_ENRICH_FAIL" = 1 ]; then body="$(enrich "$out" "$V_PROSE")"; else body="$V_PROSE"; fi ;;
       warn)     title="🟠 $SMON_HOST: $V_TAG"; body="$(enrich "$out" "$V_PROSE")" ;;
       recovery) title="🟢 $SMON_HOST: $probe recovered ($p_tag → OK)"; body="$V_PROSE"; status_for_notify=OK ;;
     esac
@@ -261,5 +307,34 @@ for p in $probes; do eval_probe "$p"; done
 
 heartbeat "${SWEEP_SUMMARY:-swept}"
 log "sweep done: ${SWEEP_SUMMARY:-none}"
+
+# --- once-daily status digest (opt-in via SMON_DIGEST_HOUR) ---------------------------------
+# When the current hour matches SMON_DIGEST_HOUR and today's digest hasn't been sent, push a
+# summary of every probe's current state — the "daily all-clear" that a transition-only monitor
+# otherwise never sends, and the prerequisite for retiring a daily health-check email.
+maybe_digest(){
+  [ -n "$SMON_DIGEST_HOUR" ] || return 0
+  local h today marker
+  h=$(date +%-H); today=$(date +%Y-%m-%d); marker="$SMON_STATE_DIR/.digest-sent"
+  [ "$h" = "$SMON_DIGEST_HOUR" ] || return 0
+  [ "$(cat "$marker" 2>/dev/null)" = "$today" ] && return 0    # already sent today
+  local worst=OK line="" f pr st tg
+  for f in "$SMON_STATE_DIR"/*.state; do
+    [ -r "$f" ] || continue
+    pr="$(basename "$f" .state)"
+    IFS=" " read -r st tg _ _ _ < "$f"
+    line="${line}${pr}: ${st} ${tg}"$'\n'
+    case "$st" in FAIL) worst=FAIL ;; WARN) [ "$worst" = OK ] && worst=WARN ;; esac
+  done
+  local emoji="🟢"; case "$worst" in FAIL) emoji="🔴" ;; WARN) emoji="🟠" ;; esac
+  if [ "$DRY_RUN" = 1 ]; then
+    printf '[DRY DIGEST %s] %s daily digest\n%s' "$worst" "$SMON_HOST" "$line"
+  else
+    notify_send "$worst" "$emoji $SMON_HOST: daily digest ($worst)" "${line:-no probe state recorded}"
+    printf '%s' "$today" > "$marker"
+  fi
+}
+maybe_digest
+
 [ "$DRY_RUN" = 1 ] && echo "sweep: ${SWEEP_SUMMARY:-none}"
 exit 0

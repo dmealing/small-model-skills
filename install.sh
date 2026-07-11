@@ -36,15 +36,22 @@ echo "  bin    : $BINDIR   (must be on PATH)"
 echo "  skills : $SKILLS"
 echo
 
-# 1. copy runtime
+# 1. copy runtime. rm the dests first: 'cp -a src dest' nests when dest exists (dest/src) and a
+#    plain merge-copy leaves stale files (a wrapper deleted from the repo would linger installed).
 mkdir -p "$DATA"
+rm -rf "$DATA/bin" "$DATA/modules" "$DATA/monitor"
 cp -a "$SRC/bin" "$SRC/modules" "$DATA/"
-chmod +x "$DATA"/bin/* 2>/dev/null || true
+[ -d "$SRC/monitor" ] && cp -a "$SRC/monitor" "$DATA/"   # the smon system monitor (bin/ + test/)
+chmod +x "$DATA"/bin/* "$DATA"/monitor/bin/* 2>/dev/null || true
 
-# 2. symlink wrappers onto PATH (skip the lib/ dir)
+# 2. symlink wrappers onto PATH (skip the lib/ dir). Prune dangling links from a prior install
+#    first so a removed wrapper's symlink doesn't linger.
 mkdir -p "$BINDIR"
+for l in "$BINDIR"/*; do [ -L "$l" ] && [ ! -e "$l" ] && rm -f "$l"; done 2>/dev/null || true
 n=0; for f in "$DATA"/bin/*; do [ -f "$f" ] || continue; ln -sf "$f" "$BINDIR/$(basename "$f")"; n=$((n+1)); done
-echo "linked $n wrappers into $BINDIR"
+# smon (the monitor orchestrator) also goes on PATH, from monitor/bin.
+if [ -x "$DATA/monitor/bin/smon" ]; then ln -sf "$DATA/monitor/bin/smon" "$BINDIR/smon"; n=$((n+1)); fi
+echo "linked $n commands into $BINDIR"
 
 # 3. install skills
 mkdir -p "$SKILLS"
