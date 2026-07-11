@@ -53,6 +53,11 @@ FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetc
 # CPU_HOG_PCT=90        # sys-diag WARN (CPU_HOG) when a single process uses >= this %core
 # SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB
 # TEMP_WARN_C=85        # sys-diag WARN (THERMAL) when the hottest CPU/GPU sensor is >= this °C
+# SMART_NVME_WEAR_WARN=80    # smart-health WARN (DRIVE_AGING) when NVMe 'Percentage Used' >= this %
+# SMART_NVME_WEAR_CRIT=95    # smart-health FAIL (DRIVE_FAILING) when NVMe 'Percentage Used' >= this %
+# SMART_SPARE_WARN=20        # smart-health WARN (DRIVE_AGING) when NVMe 'Available Spare' <= this %
+# SMART_TEMP_WARN=70         # smart-health WARN (DRIVE_AGING) when any drive temp >= this °C
+# SMART_DEVICES=             # smart-health device list (blank = auto-detect physical disks via lsblk)
 
 # --- File search (file-search skill / find-files) ---
 SEARCH_ROOT=            # default dir to search when none is given (blank = current dir; e.g. set to $HOME)

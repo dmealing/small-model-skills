@@ -72,6 +72,7 @@ portability bugs the macOS port surfaced along the way.
 | `network-triage` | internet down? ISP vs DNS vs LAN vs failover (SNMP + optional router module) |
 | `system-triage` | why is my computer slow? (CPU / load / memory / top hogs / thermal) |
 | `disk-report` | why is my disk full? (biggest dirs/files, caches, docker, logs) |
+| `disk-health` | is a drive failing or wearing out? NVMe wear/spare/critical warnings, SATA reallocated/pending sectors, temps |
 | `log-triage` | what service is broken / what's erroring? (failed units, recent errors) |
 | `ollama-doctor` | is my local model OK? daemon / models / loaded / **VRAM fit** or CPU-spill — the offline brain |
 | `freeze-forensics` | why did it freeze? last-boot crash trail + is the **watchdog actually armed** (Linux) |

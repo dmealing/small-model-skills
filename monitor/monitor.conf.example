@@ -5,7 +5,8 @@
 # Which diagnostic probes this host runs each sweep (space-separated; must exist in ../bin).
 SMON_PROBES="sys-diag disk-report log-triage runaway-hunter"
 # Add on an inference host: ollama-doctor. On a Docker host: docker-hygiene. On a LAN
-# sentinel only: net-diag router-status (don't have every host poll the router).
+# sentinel only: net-diag router-status (don't have every host poll the router). For SMART/drive
+# health monitoring: smart-health (needs smartctl + sudoers; see bin/smart-health header).
 
 # Enrichment engine for alert messages: glm (cheap cloud) | local (Ollama) | none (raw prose).
 SMON_BRAIN=none
