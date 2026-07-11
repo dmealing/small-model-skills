@@ -79,8 +79,8 @@ The verdict `STATUS` is independent of the process exit code:
 - **`1`** — the probe tool itself failed to gather data (e.g. a required binary is missing, or it can't
   read the data it needs). This is reported via a `FAIL` verdict with a tag like `PROBE_FAILED`, and the
   probe also exits non-zero.
-- **`124` / `137` / `143`** — the probe was killed by a wall-clock timeout before it could finish (GNU
-  `timeout`, BusyBox `timeout`, and `128+SIGKILL` respectively). No `verdict:` line is printed by the
+- **`124` / `137` / `143`** — the probe was killed by a wall-clock timeout before it could finish (124 from GNU/coreutils
+  `timeout`; 137 = 128+SIGKILL; 143 = 128+SIGTERM, e.g. BusyBox `timeout`). No `verdict:` line is printed by the
   probe itself in this case — a consumer that wraps probes with its own timeout (as `monitor/bin/smon`
   does) should treat these kill codes as a **synthetic `FAIL`** on the consumer side, since a probe that
   never returns is exactly the "lost visibility" case §2 describes.
