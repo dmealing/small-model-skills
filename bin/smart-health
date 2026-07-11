@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# smart-health — read-only SMART/health summary for local disks: NVMe wear (% used), available
+# spare, critical warnings, temperatures, and SATA reallocated/pending sectors. Flags failing or
+# soon-to-fail drives the CPU/GPU-only thermal check in sys-diag can't see. Changes nothing.
+#
+# Needs `smartctl` (smartmontools) and, for device access, root. Grant a read-only sudoers entry
+# so it runs unattended from a monitor, e.g. in /etc/sudoers.d/smart-health (chmod 440):
+#   <user> ALL=(root) NOPASSWD: /usr/sbin/smartctl -H -A /dev/nvme[0-9]*, /usr/sbin/smartctl -H -A /dev/sd[a-z]
+# Config: SMART_NVME_WEAR_WARN/_CRIT (%), SMART_SPARE_WARN (%), SMART_TEMP_WARN (°C), SMART_DEVICES.
+# Exit: 0 diagnosis ran (even if it found a problem), 1 tool itself couldn't run.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+: "${SMART_NVME_WEAR_WARN:=80}"   # NVMe 'Percentage Used' at/above this -> WARN
+: "${SMART_NVME_WEAR_CRIT:=95}"   # ...at/above this -> FAIL
+: "${SMART_SPARE_WARN:=20}"       # NVMe 'Available Spare' at/below this % -> WARN (near the vendor threshold)
+: "${SMART_TEMP_WARN:=70}"        # any drive temperature at/above this (°C) -> WARN
+: "${SMART_DEVICES:=}"            # explicit device list (blank = auto-detect physical disks)
+
+smols_identity "Read-only: disk SMART health — NVMe wear/spare/critical, SATA reallocated sectors, temps"
+
+# smartctl lives in /usr/sbin or /sbin, often off a user's PATH; find it explicitly.
+SMARTCTL=""
+for c in smartctl /usr/sbin/smartctl /sbin/smartctl; do have "$c" && { SMARTCTL="$c"; break; }; [ -x "$c" ] && { SMARTCTL="$c"; break; }; done
+[ -n "$SMARTCTL" ] || { smols_verdict FAIL PROBE_FAILED "smartctl (smartmontools) not installed"; smols_help "Install smartmontools, then re-run"; exit 1; }
+
+# Run smartctl with sudo only if we're not already root and passwordless sudo is available.
+smart(){ if [ "$(id -u)" = 0 ]; then "$SMARTCTL" "$@"; else sudo -n "$SMARTCTL" "$@" 2>/dev/null; fi; }
+
+# Device list: config, else auto-detect physical disks (nvmeXnY + sdX), skipping partitions/loop/rom.
+devs="$SMART_DEVICES"
+if [ -z "$devs" ]; then
+  devs="$(lsblk -dn -o NAME,TYPE 2>/dev/null | awk '$2=="disk"{print "/dev/"$1}' | tr '\n' ' ')"
+fi
+[ -n "$devs" ] || { smols_verdict FAIL PROBE_FAILED "no disks found to check (set SMART_DEVICES)"; exit 1; }
+
+worst=OK; reasons=""; ran=0
+smols_sec "drives"
+rows=""
+for d in $devs; do
+  out="$(smart -H -A "$d")"; [ -n "$out" ] || { rows="${rows}${d},NO-ACCESS,-,-,-
+"; reasons="${reasons}${d}: unreadable (need root/sudoers). "; [ "$worst" = OK ] && worst=WARN; continue; }
+  ran=1
+  health="$(printf '%s\n' "$out" | grep -iE 'overall-health' | grep -oiE 'PASSED|FAILED' | head -1)"
+  temp="$(printf '%s\n' "$out" | grep -iE '^Temperature:' | grep -oE '[0-9]+' | head -1)"
+  [ -n "$temp" ] || temp="$(printf '%s\n' "$out" | awk '/Airflow_Temperature|Temperature_Celsius/{print $10; exit}')"
+  wear="$(printf '%s\n' "$out" | awk -F: '/Percentage Used/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+  spare="$(printf '%s\n' "$out" | awk -F: '/Available Spare:/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+  crit="$(printf '%s\n' "$out" | awk -F: '/Critical Warning/{gsub(/[^0-9x]/,"",$2); print $2; exit}')"
+  realloc="$(printf '%s\n' "$out" | awk '/Reallocated_Sector_Ct/{print $10; exit}')"
+  pending="$(printf '%s\n' "$out" | awk '/Current_Pending_Sector/{print $10; exit}')"
+
+  # per-drive verdict
+  local_state=OK
+  if [ "$health" = FAILED ]; then local_state=FAIL; reasons="${reasons}${d}: SMART overall health FAILED. "; fi
+  if [ -n "$crit" ] && [ "$crit" != "0x00" ] && [ "$crit" != "0" ]; then local_state=FAIL; reasons="${reasons}${d}: NVMe critical warning ${crit}. "; fi
+  if [ -n "$wear" ] && [ "$wear" -ge "$SMART_NVME_WEAR_CRIT" ] 2>/dev/null; then local_state=FAIL; reasons="${reasons}${d}: ${wear}% wear (>=${SMART_NVME_WEAR_CRIT}%). "; fi
+  if [ -n "$realloc" ] && [ "$realloc" -gt 0 ] 2>/dev/null; then [ "$local_state" = OK ] && local_state=WARN; reasons="${reasons}${d}: ${realloc} reallocated sector(s). "; fi
+  if [ -n "$pending" ] && [ "$pending" -gt 0 ] 2>/dev/null; then local_state=FAIL; reasons="${reasons}${d}: ${pending} pending sector(s). "; fi
+  if [ -n "$wear" ] && [ "$wear" -ge "$SMART_NVME_WEAR_WARN" ] 2>/dev/null && [ "$local_state" = OK ]; then local_state=WARN; reasons="${reasons}${d}: ${wear}% wear (>=${SMART_NVME_WEAR_WARN}%). "; fi
+  if [ -n "$spare" ] && [ "$spare" -le "$SMART_SPARE_WARN" ] 2>/dev/null && [ "$local_state" != FAIL ]; then local_state=WARN; reasons="${reasons}${d}: ${spare}% spare left. "; fi
+  if [ -n "$temp" ] && [ "$temp" -ge "$SMART_TEMP_WARN" ] 2>/dev/null && [ "$local_state" = OK ]; then local_state=WARN; reasons="${reasons}${d}: ${temp}°C. "; fi
+
+  case "$local_state" in FAIL) worst=FAIL ;; WARN) [ "$worst" = OK ] && worst=WARN ;; esac
+  rows="${rows}${d},${health:-?},${wear:-?}%wear,${spare:-?}%spare,${temp:-?}C,${realloc:-?}realloc
+"
+done
+printf '%s' "$rows" | grep -v '^$' | smols_toon drives dev,health,wear,spare,temp,realloc
+
+smols_sec "verdict"
+if [ "$ran" = 0 ]; then
+  smols_verdict FAIL PROBE_FAILED "could not read SMART from any device — needs root or a NOPASSWD sudoers entry for smartctl"
+  smols_help "Add /etc/sudoers.d/smart-health (see the header of this script), then re-run"
+elif [ "$worst" = FAIL ]; then
+  smols_verdict FAIL DRIVE_FAILING "${reasons}"
+  smols_help "Back up the affected drive NOW and plan a replacement; a FAILED health / critical warning / pending sectors mean imminent data loss"
+elif [ "$worst" = WARN ]; then
+  smols_verdict WARN DRIVE_AGING "${reasons}"
+  smols_help "Not urgent, but watch the flagged drive(s); high wear or a few reallocated sectors mean end-of-life is approaching"
+else
+  smols_verdict OK NOMINAL "all checked drives report healthy SMART, low wear, spare capacity, and normal temps."
+fi
+exit 0
