@@ -38,7 +38,7 @@ worst=OK; reasons=""; ran=0
 smols_sec "drives"
 rows=""
 for d in $devs; do
-  out="$(smart -H -A "$d")"; [ -n "$out" ] || { rows="${rows}${d},NO-ACCESS,-,-,-
+  out="$(smart -H -A "$d")"; [ -n "$out" ] || { rows="${rows}${d},NO-ACCESS,-,-,-,-
 "; reasons="${reasons}${d}: unreadable (need root/sudoers). "; [ "$worst" = OK ] && worst=WARN; continue; }
   ran=1
   health="$(printf '%s\n' "$out" | grep -iE 'overall-health' | grep -oiE 'PASSED|FAILED' | head -1)"
