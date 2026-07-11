@@ -196,9 +196,17 @@ parse_verdict(){
   if [ -z "$vline" ]; then V_STATUS=FAIL; V_TAG=NO_VERDICT; V_PROSE="probe emitted no verdict line"; return; fi
   V_STATUS="$(printf '%s' "$vline" | awk '{print $2}')"
   V_TAG="$(printf '%s' "$vline" | awk '{print $3}')"
-  V_PROSE="$(printf '%s' "$vline" | sed 's/^verdict: [A-Z]* [A-Z_]* — //')"
+  # Prose = everything after " <TAG> — ". The TAG class must include DIGITS (the published grammar
+  # allows them, docs/verdict-contract.md); a bare [A-Z_]* here would fail to match a digit-bearing
+  # tag and leave the whole raw line as the prose. Uses the real grammar so e.g. "DISK90" strips right.
+  V_PROSE="$(printf '%s' "$vline" | sed 's/^verdict: [A-Z]* [A-Z][A-Z0-9_]* — //')"
   case "$V_STATUS" in OK|WARN|FAIL) ;; *) V_STATUS=FAIL; V_TAG=BAD_VERDICT; V_PROSE="unparseable verdict: $vline" ;; esac
-  if [ -z "$V_TAG" ] || [ "$V_TAG" = "—" ]; then V_STATUS=FAIL; V_TAG=BAD_VERDICT; V_PROSE="malformed verdict (missing tag): $vline"; fi
+  # Enforce the published TAG grammar ^[A-Z][A-Z0-9_]{1,23}$ (2–24 chars). A tag that violates it
+  # (empty, the em-dash separator itself, lowercase, wrong length) is a malformed verdict, not a
+  # usable one — treat it as FAIL/BAD_VERDICT rather than passing garbage through as the tag.
+  if ! printf '%s' "$V_TAG" | grep -qE '^[A-Z][A-Z0-9_]{1,23}$'; then
+    V_STATUS=FAIL; V_TAG=BAD_VERDICT; V_PROSE="malformed verdict (bad tag): $vline"
+  fi
 }
 
 # --- per-probe state: "status tag pending_since sweep_count alerted" ------------------------
