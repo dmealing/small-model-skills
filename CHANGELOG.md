@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`smon` capabilities** — four new alert-policy and delivery features, all config-gated and
+  off/safe by default:
+  - **FAIL re-alert** (`SMON_FAIL_REMIND_SWEEPS`): re-push a still-standing FAIL every N sweeps
+    so a missed first notification or persistent failure doesn't fall silent (default 0=off).
+  - **Daily digest** (`SMON_DIGEST_HOUR`): once-daily all-probe status summary — the "daily
+    all-clear" a transition-only monitor otherwise never sends, tracked via `.digest-sent` marker
+    (hour 0-23, blank=off).
+  - **Don't-enrich-FAIL** (`SMON_ENRICH_FAIL`, default 0): critical FAIL alerts now ship raw
+    verdict prose immediately instead of blocking up to 60s on enrichment model call; WARN is
+    still enriched (less urgent).
+  - **Fallback notify** (`SMON_FALLBACK_NOTIFY`) + **Matrix backend** (`matrix`, via Matrix
+    client-server API): when a primary `ha-push` transport fails (e.g. Home Assistant down — the
+    infra smon monitors), try fallback backends on different infra so a real alert still gets out.
+    Config: `SMON_MATRIX_URL` (homeserver), `SMON_MATRIX_ROOM` (!room:server),
+    `SMON_MATRIX_TOKEN_CMD`. `notify_ha` and `notify_matrix` return transport success/failure.
+- **`install.sh` fixes** — now actually installs `monitor/` (copies to `$DATA/monitor` and
+  symlinks `smon` onto PATH), switches `bin/modules/monitor` install to rm-then-copy (avoids
+  stale files), and prunes dangling wrapper symlinks from prior installs. Previously `smon` was
+  never installed via the normal flow.
+
 ### Fixed
 - **`smon` silent-loss bugs** — three 'you'll never know' failure-class bugs in the alert policy, all
   found by subagent review, confirmed against code and live state, and regression-tested (7 new test cases,
