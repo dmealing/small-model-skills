@@ -14,9 +14,10 @@
 
 A routine, cheap, cross-machine system monitor built on the small-model-skills diagnostic
 probes. It runs each host's probes on a schedule, reads their **verdict contract** lines
-(`verdict: <OK|WARN|FAIL> <TAG> — prose`, shipped in PR #9), alerts the user on meaningful
-state transitions, and heartbeats so a dead/frozen host is itself detectable. Replaces two
-abandoned monitors (`resource-monitor`, `system-alert-ai`) that died of alert-theater fatigue.
+(`verdict: <OK|WARN|FAIL> <TAG> — prose`, shipped in PR #9; spec: [`../../verdict-contract.md`](../../verdict-contract.md)),
+alerts the user on meaningful state transitions, and heartbeats so a dead/frozen host is itself
+detectable. Replaces two abandoned monitors (`resource-monitor`, `system-alert-ai`) that died of
+alert-theater fatigue.
 
 ## Architecture — hybrid (deterministic core, model as garnish)
 

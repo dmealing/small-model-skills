@@ -113,6 +113,7 @@ smols_help(){ local i=1; for h in "$@"; do echo "  help[$i]: $h"; i=$((i+1)); do
 # DISK_CRITICAL, DAEMON_DOWN, NOMINAL). Keep <prose> to a single sentence for weak-model
 # context. The verdict STATUS is independent of the process exit code — a WARN still exits 0
 # (the diagnosis ran); keep the wrapper's existing `exit` lines as they are.
+# Full spec: docs/verdict-contract.md
 smols_verdict(){ local s="$1" tag="$2"; shift 2; printf 'verdict: %s %s — %s\n' "$s" "$tag" "$*"; }
 
 # smols_ps_rows: turns `ps` output shaped "pid comm... colA colB" (comm may contain spaces —

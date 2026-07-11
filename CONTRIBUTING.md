@@ -15,8 +15,8 @@ facts). It's short, and those rules are what keep a skill from quietly failing o
    numbered set of imperative steps (no nested if/else); point at the wrapper, not raw commands. Add
    `x-wrappers: [<wrapper>]` to the frontmatter so `smols` lists how to invoke it.
 2. **`bin/<wrapper>`** — a deterministic script that does the work and prints a short digest ending in a
-   verdict. Read-only. Read any host-specific value from `~/.config/small-model-skills/config` via
-   `bin/lib/common.sh`; never hardcode IPs/paths/hostnames.
+   verdict (see [`docs/verdict-contract.md`](docs/verdict-contract.md)). Read-only. Read any host-specific
+   value from `~/.config/small-model-skills/config` via `bin/lib/common.sh`; never hardcode IPs/paths/hostnames.
 3. Keep it **read-only / propose-don't-apply.** Any state-changing step is text for a human to run, never an
    action the model takes.
 

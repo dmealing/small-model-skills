@@ -79,7 +79,8 @@ All notable changes to this project are documented here. The format is based on
   `smols_verdict` helper: `verdict: <OK|WARN|FAIL> <TAG> — <prose>`. Fixed vocabulary (OK/WARN/FAIL; FAIL also
   covers a probe that couldn't run — `PROBE_FAILED` — or a down daemon), `SCREAMING_SNAKE` tags, verdict
   status independent of exit code. This turns every diagnostic wrapper into a monitoring probe — `smon`
-  greps `^verdict:` and alerts on transitions. Documented in `docs/authoring-small-model-skills.md`.
+  greps `^verdict:` and alerts on transitions. Documented in `docs/authoring-small-model-skills.md` and
+  `docs/verdict-contract.md`.
 - Config-tunable verdict thresholds: `DISK_WARN_PCT`/`DISK_CRIT_PCT`, `LOAD_WARN_FACTOR`, `CPU_HOG_PCT`,
   `SWAP_WARN_KB`, `TEMP_WARN_C` (documented in `config.example`). `smols_df_full_pct` helper added to both OS
   backends.

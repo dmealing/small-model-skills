@@ -30,6 +30,7 @@ internet-less model into a useful **diagnostics + offline-dev assistant** for a 
    machine-greppable verdict line** (`verdict: <OK|WARN|FAIL> <TAG> — <prose>`) so each doubles as a
    monitoring probe — `smon` (in `monitor/bin/`) greps `^verdict:` and alerts on status/tag transitions. See
    [Platform support & AXI conventions](#platform-support--axi-conventions-in-design) below.
+   The verdict contract is specified in [docs/verdict-contract.md](docs/verdict-contract.md).
 
 ## Architecture
 
