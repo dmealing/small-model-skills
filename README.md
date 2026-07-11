@@ -81,7 +81,7 @@ portability bugs the macOS port surfaced along the way.
 **Monitor** (orchestrator; turns probes into a recurring cross-machine monitor):
 | Tool | Does |
 |---|---|
-| `smon` | routine system monitor — runs each configured probe on a schedule, reads its verdict, alerts on state transitions (not blips), optional cheap-model enrichment, heartbeat for dead-host detection |
+| `smon` | routine system monitor — runs each configured probe on a schedule, reads its verdict, alerts on state transitions (not blips), optional cheap-model enrichment, fallback notify when primary fails, heartbeat for dead-host detection, optional daily digest |
 
 **Search** (read-only; find a file, don't triage):
 | Skill | Answers |

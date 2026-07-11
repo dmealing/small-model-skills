@@ -23,11 +23,23 @@ SMON_HA_TOKEN_CMD=           # e.g. cat ~/.config/smon/ha.token   (or an op-get 
 # --- Uptime Kuma heartbeat (when SMON_NOTIFY includes kuma, or always if set) ---
 SMON_KUMA_PUSH_URL=          # http://<kuma-host>:3001/api/push/<token>   (a missing heartbeat = host down)
 
+# --- Fallback + Matrix notify (optional) ---
+# When a primary ha-push fails (e.g. Home Assistant itself is down — the infra smon monitors),
+# try these backends so a real alert still gets out a different way. 'matrix' rides different infra.
+SMON_FALLBACK_NOTIFY=        # e.g. "matrix" or "stdout"  (tried only when a primary backend fails)
+# Matrix client-server API (used by the 'matrix' backend, primary or fallback):
+SMON_MATRIX_URL=             # homeserver base, e.g. http://<matrix-host>:8008
+SMON_MATRIX_ROOM=            # room id, e.g. !abc123:example.org
+SMON_MATRIX_TOKEN_CMD=       # command printing an access token (kept out of the file)
+
 # --- Alert policy ---
 SMON_WARN_SUSTAIN=2          # a WARN must persist this many consecutive sweeps before it pushes
 SMON_QUIET_START=23          # defer WARN push from this hour ...
 SMON_QUIET_END=7             # ... until this hour (FAIL and recovery always push, bypassing quiet hours)
 SMON_PROBE_TIMEOUT=120       # seconds; defense against hung probes holding flock and causing monitoring blackout
+SMON_FAIL_REMIND_SWEEPS=0    # re-push a still-standing FAIL every N sweeps (0 = never; e.g. 36 ≈ every 6h at */10)
+SMON_ENRICH_FAIL=0           # 1 = enrich FAIL messages with the model too; 0 = ship FAIL raw (no model wait — faster critical alerts)
+SMON_DIGEST_HOUR=            # hour 0-23 to push a once-daily all-probe status digest (blank = off; the "daily all-clear")
 
 # --- Paths (defaults are usually fine) ---
 # SMON_STATE_DIR=$HOME/.local/state/smon
