@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`smart-health` probe + `disk-health` skill** — read-only SMART/drive-health monitoring for NVMe
+  and SATA drives. Reports NVMe wear (`Percentage Used`), `Available Spare` vs threshold,
+  `Critical Warning` flags, temperatures; SATA `Reallocated_Sector_Ct` and `Current_Pending_Sector`.
+  Verdict: OK/NOMINAL, WARN/DRIVE_AGING (high wear, low spare, elevated temp), FAIL/DRIVE_FAILING
+  (FAILED health, critical warning, pending sectors). Config-tunable thresholds:
+  `SMART_NVME_WEAR_WARN`/`_CRIT`, `SMART_SPARE_WARN`, `SMART_TEMP_WARN`, `SMART_DEVICES` (auto-detects
+  physical disks via `lsblk` when unset). Needs `smartctl` (smartmontools) + root/sudoers for device
+  access; wrapper header documents a read-only NOPASSWD entry; probe degrades to FAIL/PROBE_FAILED
+  with fix instructions if access denied. Fills the coverage gap in `sys-diag` (which reads CPU/GPU
+  thermals only) for eventual retirement of legacy weekly-health-summary. Wrapper: `bin/smart-health`.
+  Skill: `skills/disk-health/SKILL.md`.
 - **`smon` capabilities** — four new alert-policy and delivery features, all config-gated and
   off/safe by default:
   - **FAIL re-alert** (`SMON_FAIL_REMIND_SWEEPS`): re-push a still-standing FAIL every N sweeps

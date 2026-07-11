@@ -54,7 +54,7 @@ Claude Code (offline, local model via Ollama)
 ## Repo layout
 
 ```
-bin/                 net-diag, router-status, sys-diag, disk-report, log-triage, offline-prep, offline-doctor
+bin/                 net-diag, router-status, sys-diag, disk-report, smart-health, log-triage, offline-prep, offline-doctor
 bin/lib/common.sh    config loader + shared helpers (digest formatting, PASS/FAIL, safe_run)
 monitor/bin/smon     routine system monitor orchestrator (runs probes, alerts on verdict transitions)
 monitor/README.md    smon documentation
@@ -76,6 +76,7 @@ LICENSE              MIT
 | `network-triage` | `net-diag`, `router-status` | "internet down? ISP vs DNS vs LAN vs failover" |
 | `system-triage` | `sys-diag` | "why is my computer slow?" (CPU/mem/load/top hogs/thermal) |
 | `disk-report` | `disk-report` | "why is my disk full?" (biggest dirs/files, caches, docker, logs) |
+| `disk-health` | `smart-health` | "is a drive failing or wearing out?" (NVMe wear/spare/critical, SATA reallocated/pending sectors, temps) |
 | `log-service-triage` | `log-triage` | "what service is broken / what's in the logs?" (failed units, recent errors) |
 
 **Search** (read-only; locate a file, not triage):
