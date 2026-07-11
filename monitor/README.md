@@ -3,7 +3,8 @@
 `smon` turns the small-model-skills diagnostic probes into a cheap, cross-machine monitor.
 Every sweep it runs each configured probe, reads its **verdict contract** line
 (`verdict: <OK|WARN|FAIL> <TAG> — prose`), and alerts you only on meaningful state
-transitions — never on every threshold blip.
+transitions — never on every threshold blip. The verdict contract is specified in
+[`docs/verdict-contract.md`](../docs/verdict-contract.md).
 
 ## How it works
 

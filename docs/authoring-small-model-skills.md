@@ -78,7 +78,8 @@ best at the very start/end of context and degrades in the middle, worse for weak
 - **The verdict contract** — every wrapper ends on exactly ONE machine-greppable line, emitted with the
   `smols_verdict` helper: `verdict: <OK|WARN|FAIL> <TAG> — <one-sentence prose>` (column 0). This is what
   makes each wrapper double as a monitoring probe (`smon` greps `^verdict:` and alerts on status/tag
-  transitions), so the vocabulary is fixed:
+  transitions), so the vocabulary is fixed. See [`docs/verdict-contract.md`](verdict-contract.md) for the
+  full spec:
   - `OK` — nominal/healthy, nothing to do.
   - `WARN` — a real problem found that warrants attention but isn't an emergency.
   - `FAIL` — a critical state, OR the probe itself couldn't run (a broken probe = lost visibility, which
