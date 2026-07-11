@@ -120,7 +120,7 @@ _notify_one(){
     ha-push) notify_ha "$title" "$body" ;;   # returns non-zero on HTTP failure
     matrix)  notify_matrix "$title" "$body" ;;
     kuma)    return 0 ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
-    *) log "unknown notify backend '$b'"; return 0 ;;
+    *) log "unknown notify backend '$b'"; return 1 ;;
   esac
 }
 
@@ -141,13 +141,15 @@ notify_ha(){
 # (homeserver base), SMON_MATRIX_TOKEN(_CMD), SMON_MATRIX_ROOM (!id:server). A good FALLBACK
 # because it rides different infra than HA. Returns 0 on success, non-zero otherwise.
 notify_matrix(){
-  local title="$1" body="$2" tok url code
+  local title="$1" body="$2" tok url code txn room_encoded
   : "${SMON_MATRIX_URL:=}"; : "${SMON_MATRIX_ROOM:=}"; : "${SMON_MATRIX_TOKEN:=}"; : "${SMON_MATRIX_TOKEN_CMD:=}"
   tok="$SMON_MATRIX_TOKEN"; [ -z "$tok" ] && [ -n "$SMON_MATRIX_TOKEN_CMD" ] && tok="$(smols_timeout 10 bash -c "$SMON_MATRIX_TOKEN_CMD" 2>/dev/null)"
   [ -n "$SMON_MATRIX_URL" ] && [ -n "$SMON_MATRIX_ROOM" ] && [ -n "$tok" ] || {
     log "matrix skipped (missing SMON_MATRIX_URL / SMON_MATRIX_ROOM / token)"; return 1; }
-  url="${SMON_MATRIX_URL%/}/_matrix/client/v3/rooms/${SMON_MATRIX_ROOM}/send/m.room.message"
-  code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST "$url" \
+  room_encoded="$(printf '%s' "$SMON_MATRIX_ROOM" | sed 's/:/%3A/g')"
+  txn="smon-$$-${SECONDS}-${RANDOM}"
+  url="${SMON_MATRIX_URL%/}/_matrix/client/v3/rooms/${room_encoded}/send/m.room.message/${txn}"
+  code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X PUT "$url" \
     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
     --data "$(jq -n --arg body "$title"$'\n'"$body" '{msgtype:"m.text",body:$body}')" 2>/dev/null)
   if [ "$code" = 200 ]; then log "matrix ok: $title"; return 0; else log "matrix FAILED (HTTP $code): $title"; return 1; fi
