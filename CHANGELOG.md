@@ -39,6 +39,18 @@ All notable changes to this project are documented here. The format is based on
   never installed via the normal flow.
 
 ### Fixed
+- **`smon` verdict parser bugs** — two latent bugs in `parse_verdict()` that violated the published verdict
+  contract (regression-tested with 2 new test cases, now 36 total): (1) **Digit-tag prose extraction** — the
+  prose-stripping sed pattern used tag class `[A-Z_]*` which excluded digits, but the published grammar
+  (`docs/verdict-contract.md`) allows digits in tags (`^[A-Z][A-Z0-9_]{1,23}$`). A digit-bearing tag like
+  `DISK90` made the strip fail to match and left the entire raw verdict line as the prose (so an alert would
+  show `verdict: OK DISK90 — 90% full` instead of `90% full`). Fixed the tag class to `[A-Z][A-Z0-9_]*` so
+  digit-bearing tags strip correctly. (2) **Tag grammar enforcement** — tag validation only rejected an empty
+  tag or the em-dash separator itself, so any other garbage (lowercase, wrong length) was accepted verbatim
+  as the tag. Now enforces the published grammar via `grep -qE '^[A-Z][A-Z0-9_]{1,23}$'` — a tag that violates
+  it is treated as a malformed verdict (FAIL/BAD_VERDICT), consistent with how a bad STATUS is already handled.
+  The fixes match the identical changes made to the TypeScript smon port to keep the shared behavioral oracle
+  aligned.
 - **`smon` silent-loss bugs** — three 'you'll never know' failure-class bugs in the alert policy, all
   found by subagent review, confirmed against code and live state, and regression-tested (7 new test cases,
   now 19 total): (1) **WARN tag-change swallow** — drifting WARN/CPU_HOG → WARN/MEMORY_PRESSURE inherited
@@ -73,8 +85,9 @@ All notable changes to this project are documented here. The format is based on
   public and contains zero host specifics. Deliberately transition-only and sustained-WARN to avoid the
   alert-theater fatigue that killed two prior monitors. See `monitor/README.md` and design spec
   `docs/superpowers/specs/2026-07-10-smon-system-monitor-design.md`. Includes a shim-based test suite
-  (`monitor/test/smon-test.sh`, 19 cases including 7 regression tests for the silent-loss bugs) covering
-  sustain/dedupe/recovery/quiet-hours/missing-verdict/tag-change/deferred-WARN paths.
+  (`monitor/test/smon-test.sh`, 36 cases including 7 regression tests for the silent-loss bugs, 14 for
+  smon capabilities, and 2 for verdict parser correctness) covering sustain/dedupe/recovery/quiet-hours/
+  missing-verdict/tag-change/deferred-WARN/digit-tag-prose/bad-grammar-tag paths.
 - **Verdict contract** — every `bin/*` wrapper now ends on exactly one machine-greppable line via the new
   `smols_verdict` helper: `verdict: <OK|WARN|FAIL> <TAG> — <prose>`. Fixed vocabulary (OK/WARN/FAIL; FAIL also
   covers a probe that couldn't run — `PROBE_FAILED` — or a down daemon), `SCREAMING_SNAKE` tags, verdict

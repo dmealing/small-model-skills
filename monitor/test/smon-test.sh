@@ -187,6 +187,18 @@ set_verdict "OK NOMINAL — fine"; runx >/dev/null
 OTHERH=$(( ( $(date +%-H) + 12 ) % 24 ))
 out="$(runx SMON_DIGEST_HOUR="$OTHERH")"; check "  no digest at non-matching hour" EMPTY "$out"
 
+echo "=== 23. parser: a digit-bearing TAG extracts prose correctly (not the raw line) ==="
+rm -f "$STATE"/*.state
+# a FAIL alert's body is V_PROSE; a digit tag must yield the text after the em-dash, not the whole line
+set_verdict "FAIL DISK90 — disk at 90 percent"; out="$(run)"
+check "  digit-tag alert carries clean prose" "disk at 90 percent" "$out"
+check "  digit-tag prose is NOT the raw verdict line" EMPTY "$(printf '%s' "$out" | grep 'verdict: FAIL DISK90' || true)"
+
+echo "=== 24. parser: a tag violating the grammar becomes BAD_VERDICT ==="
+rm -f "$STATE"/*.state
+set_verdict "OK lowercasetag — x"; out="$(run)"
+check "  bad-grammar tag -> BAD_VERDICT alert" "BAD_VERDICT" "$out"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

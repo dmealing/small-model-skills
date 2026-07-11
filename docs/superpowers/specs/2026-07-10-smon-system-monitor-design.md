@@ -135,9 +135,10 @@ Shim-based (same technique as the failover dispatcher + verdict contract work):
    no-transition → silent; →FAIL → push; WARN once → silent; WARN twice → push;
    recovery → push; model-down → raw prose ships; quiet-hours → WARN deferred (not FAIL/recovery);
    WARN tag-change alerts; missing probe → FAIL PROBE_MISSING.
-   **As shipped:** 33 test cases (was 24 at spec time, was 19 after silent-loss fixes) covering
-   FAIL re-alert on/off, don't-enrich-FAIL shipping raw prose, daily digest firing once-per-day
-   and staying silent at wrong hour. Test suite: `monitor/test/smon-test.sh`.
+   **As shipped:** 36 test cases (was 24 at spec time, was 19 after silent-loss fixes, 33 after smon
+   capabilities) covering FAIL re-alert on/off, don't-enrich-FAIL shipping raw prose, daily digest
+   firing once-per-day and staying silent at wrong hour, digit-bearing TAG prose extraction, and
+   bad-grammar TAG rejection (BAD_VERDICT). Test suite: `monitor/test/smon-test.sh`.
 2. **Real end-to-end** on the first host: one real sweep, push one test alert to the primary phone,
    confirm a Kuma heartbeat lands.
 
