@@ -38,7 +38,8 @@ SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
 : "${SMON_HA_URL:=}"
 : "${SMON_HA_TOKEN:=}"                      # or set SMON_HA_TOKEN_CMD to fetch it
 : "${SMON_HA_TOKEN_CMD:=}"
-: "${SMON_HA_TARGET:=}"                     # e.g. notify.mobile_app_<device>
+: "${SMON_HA_TARGET:=}"                     # e.g. notify.mobile_app_<device>  (ha-push backend)
+: "${SMON_HA_SCRIPT:=smon_notify}"          # HA script object_id the ha-script backend calls (severity-aware fan-out)
 : "${SMON_KUMA_PUSH_URL:=}"
 : "${SMON_QUIET_START:=23}"
 : "${SMON_QUIET_END:=7}"
@@ -87,39 +88,41 @@ in_quiet_hours(){
 }
 
 # --- notify backends ------------------------------------------------------------------------
-# notify_send <status> <title> <body>. FAIL (critical) and recovery (status OK) always deliver;
+# notify_send <status> <title> <body> [kind] [probe]. FAIL (critical) and recovery (status OK) always deliver;
 # only a sustained WARN is deferrable. A recovery is emitted ONLY for a condition the user was
 # already alerted about, so delivering it at night closes a known-open loop rather than adding
 # surprise noise. Returns 0 if the alert was actually dispatched, 1 if it was suppressed (quiet
 # hours) so the caller can leave the finding UNalerted and re-try it on a later sweep instead of
 # marking it alerted-but-never-delivered (which would also mis-fire a later "recovered" push).
 notify_send(){
-  local status="$1" title="$2" body="$3" b
+  local status="$1" title="$2" body="$3" kind="${4:-}" probe="${5:-}" b
   if [ "$status" = WARN ] && in_quiet_hours; then
     log "notify deferred (quiet hours): $title"; return 1
   fi
   local any_transport_failed=0
   for b in $SMON_NOTIFY; do
-    _notify_one "$b" "$status" "$title" "$body" || any_transport_failed=1
+    _notify_one "$b" "$status" "$title" "$body" "$kind" "$probe" || any_transport_failed=1
   done
   # If a primary backend's transport failed (e.g. HA down = the very infra we monitor), try the
   # fallback backends so a real alert still gets out through a different path.
   if [ "$any_transport_failed" = 1 ] && [ -n "$SMON_FALLBACK_NOTIFY" ]; then
     log "primary notify failed — trying fallback: $SMON_FALLBACK_NOTIFY"
-    for b in $SMON_FALLBACK_NOTIFY; do _notify_one "$b" "$status" "$title" "$body" || true; done
+    for b in $SMON_FALLBACK_NOTIFY; do _notify_one "$b" "$status" "$title" "$body" "$kind" "$probe" || true; done
   fi
   return 0   # the alert was attempted (the caller treats "attempted" as dispatched for state)
 }
 
-# _notify_one <backend> <status> <title> <body> — dispatch to one backend; return non-zero if
-# that backend's transport failed (so notify_send can fall back).
+# _notify_one <backend> <status> <title> <body> [kind] [probe] — dispatch to one backend; return
+# non-zero if that backend's transport failed (so notify_send can fall back). kind (fail|warn|
+# recovery) and probe are used only by ha-script, which forwards severity to the HA orchestrator.
 _notify_one(){
-  local b="$1" status="$2" title="$3" body="$4"
+  local b="$1" status="$2" title="$3" body="$4" kind="${5:-}" probe="${6:-}"
   case "$b" in
-    stdout)  printf '[smon %s] %s\n  %s\n' "$status" "$title" "$body"; return 0 ;;
-    ha-push) notify_ha "$title" "$body" ;;   # returns non-zero on HTTP failure
-    matrix)  notify_matrix "$title" "$body" ;;
-    kuma)    return 0 ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
+    stdout)    printf '[smon %s] %s\n  %s\n' "$status" "$title" "$body"; return 0 ;;
+    ha-push)   notify_ha "$title" "$body" ;;   # returns non-zero on HTTP failure
+    ha-script) notify_ha_script "$kind" "$probe" "$title" "$body" ;;  # severity-aware HA fan-out
+    matrix)    notify_matrix "$title" "$body" ;;
+    kuma)      return 0 ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
     *) log "unknown notify backend '$b'"; return 1 ;;
   esac
 }
@@ -135,6 +138,30 @@ notify_ha(){
     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
     --data "$(jq -n --arg title "$title" --arg message "$body" '{title:$title,message:$message}')" 2>/dev/null)
   if [ "$code" = 200 ]; then log "ha-push ok: $title"; return 0; else log "ha-push FAILED (HTTP $code): $title"; return 1; fi
+}
+
+# ha_script_payload <severity> <probe> <host> <title> <body> <tag> -> the smon_notify contract JSON
+# on stdout. Pure (jq only, no network) so it is unit-testable without a live HA.
+ha_script_payload(){
+  jq -n --arg severity "$1" --arg probe "$2" --arg host "$3" \
+        --arg title "$4" --arg message "$5" --arg tag "$6" \
+    '{severity:$severity, probe:$probe, host:$host, title:$title, message:$message, tag:$tag}'
+}
+
+# notify_ha_script <severity> <probe> <title> <body> — POST the contract to script.<SMON_HA_SCRIPT>,
+# letting HA orchestrate the severity fan-out (phone channel, board, TTS, Pushover). Generic: reads
+# only config, no host data. Returns 0 on 2xx (so notify_send can fall back), non-zero otherwise.
+notify_ha_script(){
+  local severity="$1" probe="$2" title="$3" body="$4" tok url code tag
+  tok="$(ha_token)"
+  [ -n "$SMON_HA_URL" ] && [ -n "$tok" ] || { log "ha-script skipped (missing SMON_HA_URL / token)"; return 1; }
+  tag="${SMON_HOST}-${probe}"
+  url="${SMON_HA_URL%/}/api/services/script/${SMON_HA_SCRIPT}"
+  code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST "$url" \
+    -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+    --data "$(ha_script_payload "$severity" "$probe" "$SMON_HOST" "$title" "$body" "$tag")" 2>/dev/null)
+  case "$code" in 200|201) log "ha-script ok: $title"; return 0 ;;
+    *) log "ha-script FAILED (HTTP $code): $title"; return 1 ;; esac
 }
 
 # notify_matrix — post to a Matrix room via the client-server API. Config: SMON_MATRIX_URL
@@ -281,7 +308,7 @@ eval_probe(){
     if [ "$DRY_RUN" = 1 ]; then
       printf '[DRY %s] %s\n  %s\n' "$status_for_notify" "$title" "$body"; dispatched=1
     else
-      notify_send "$status_for_notify" "$title" "$body" && dispatched=1
+      notify_send "$status_for_notify" "$title" "$body" "$kind" "$probe" && dispatched=1
     fi
     if [ "$dispatched" = 1 ]; then
       log "ALERT[$kind] $probe $key_prev -> $key_now"
@@ -302,7 +329,7 @@ eval_probe(){
 # --- --test-alert: prove the notify path end to end -----------------------------------------
 if [ "$TEST_ALERT" = 1 ]; then
   log "test-alert requested"
-  notify_send WARN "🧪 $SMON_HOST: smon test alert" "If you can read this, smon's notify path works."
+  notify_send WARN "🧪 $SMON_HOST: smon test alert" "If you can read this, smon's notify path works." warn smon-test
   heartbeat "smon test"
   exit 0
 fi
@@ -340,7 +367,7 @@ maybe_digest(){
   if [ "$DRY_RUN" = 1 ]; then
     printf '[DRY DIGEST %s] %s daily digest\n%s' "$worst" "$SMON_HOST" "$line"
   else
-    notify_send "$worst" "$emoji $SMON_HOST: daily digest ($worst)" "${line:-no probe state recorded}"
+    notify_send "$worst" "$emoji $SMON_HOST: daily digest ($worst)" "${line:-no probe state recorded}" warn digest
     printf '%s' "$today" > "$marker"
   fi
 }
