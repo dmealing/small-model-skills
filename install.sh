@@ -2,7 +2,12 @@
 # install.sh — set up small-model-skills on this machine.
 #   copies runtime (bin/lib/modules) -> $XDG_DATA_HOME/small-model-skills
 #   symlinks wrappers -> a bin dir on PATH (override with SMOLS_BINDIR)
-#   installs skills -> ~/.claude/skills
+#   installs skills — scope chosen by `--global`/`--local` flag, SMOLS_SKILLS_SCOPE env, a remembered
+#   prior choice, or an interactive prompt (default global); remembered across runs:
+#     global (default) -> ~/.claude/skills so EVERY `claude` session can use them, plus a curated
+#                         cc-home view (symlinks) that exposes ONLY these to `claude-local`
+#     local            -> cc-home ONLY (claude-local); scrubs ~/.claude/skills so a normal `claude`
+#                         session doesn't load them
 #   seeds ~/.config/small-model-skills/config from config.example (if absent)
 #   checks dependencies
 set -euo pipefail
@@ -25,15 +30,48 @@ esac
 SRC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/small-model-skills"
 BINDIR="${SMOLS_BINDIR:-$HOME/.local/bin}"
-SKILLS="$HOME/.claude/skills"
+SKILLS="$HOME/.claude/skills"          # global skills dir (loaded by every `claude`) — used in 'global' scope
 CFG="$HOME/.config/small-model-skills/config"
+CC_HOME="$(dirname "$CFG")/cc-home"    # claude-local's curated CLAUDE_CONFIG_DIR (always holds only these skills)
+
+# Skill scope — where skills install:
+#   global (default): ~/.claude/skills, so EVERY `claude` session loads them (+ a curated cc-home for claude-local)
+#   local           : cc-home ONLY (claude-local); kept OUT of ~/.claude/skills so a normal `claude` won't load them
+# Pick it any of these ways (first that resolves wins); the choice is remembered in SCOPE_FILE so a later bare
+# `./install.sh` keeps it instead of reverting to the default:
+#   1) flag:    ./install.sh --local | --global   (or --scope=local|global)
+#   2) env:     SMOLS_SKILLS_SCOPE=local|global ./install.sh
+#   3) memory:  what a previous run recorded in SCOPE_FILE
+#   4) prompt:  interactive ask (TTY only), defaulting to global
+SCOPE_FILE="$CC_HOME/.skills-scope"
+SCOPE=""
+for arg in "$@"; do case "$arg" in
+  --local|--scope=local)   SCOPE="local" ;;
+  --global|--scope=global) SCOPE="global" ;;
+  -h|--help)
+    echo "usage: install.sh [--global|--local]"
+    echo "  --global  (default) install skills to ~/.claude/skills for ALL claude sessions + a curated claude-local view"
+    echo "  --local   install skills to claude-local ONLY (cc-home); keep them out of normal claude sessions"
+    echo "  env SMOLS_SKILLS_SCOPE=global|local also works; either way your choice is remembered for next time"
+    exit 0 ;;
+esac; done
+[ -z "$SCOPE" ] && [ -n "${SMOLS_SKILLS_SCOPE:-}" ] && SCOPE="$SMOLS_SKILLS_SCOPE"
+[ -z "$SCOPE" ] && [ -f "$SCOPE_FILE" ] && SCOPE="$(cat "$SCOPE_FILE" 2>/dev/null)"
+if [ -z "$SCOPE" ] && [ -t 0 ]; then
+  printf 'Install skills for [g]lobal (every claude session) or [l]ocal-only (claude-local)? [G/l] '
+  read -r _ans || _ans=""
+  case "$_ans" in [Ll]*) SCOPE="local" ;; *) SCOPE="global" ;; esac
+fi
+[ -z "$SCOPE" ] && SCOPE="global"
+case "$SCOPE" in global|local) ;; *) echo "warning: unknown scope '$SCOPE' — using global"; SCOPE="global" ;; esac
 
 echo "small-model-skills installer"
 echo "  OS     : $SMOLS_OS ($(uname -s 2>/dev/null))"
 echo "  source : $SRC"
 echo "  runtime: $DATA"
 echo "  bin    : $BINDIR   (must be on PATH)"
-echo "  skills : $SKILLS"
+if [ "$SCOPE" = local ]; then echo "  skills : $CC_HOME/skills   (scope=local — claude-local only, not ~/.claude/skills)"
+else echo "  skills : $SKILLS   (scope=global — all sessions) + curated cc-home for claude-local"; fi
 echo
 
 # 1. copy runtime. rm the dests first: 'cp -a src dest' nests when dest exists (dest/src) and a
@@ -53,26 +91,26 @@ n=0; for f in "$DATA"/bin/*; do [ -f "$f" ] || continue; ln -sf "$f" "$BINDIR/$(
 if [ -x "$DATA/monitor/bin/smon" ]; then ln -sf "$DATA/monitor/bin/smon" "$BINDIR/smon"; n=$((n+1)); fi
 echo "linked $n commands into $BINDIR"
 
-# 3. install skills
-mkdir -p "$SKILLS"
-if compgen -G "$SRC/skills/*/" >/dev/null; then
-  # rm the dest first: 'cp -a src dest' when dest already exists nests it (dest/src) instead of
-  # overwriting, which silently keeps a stale SKILL.md on re-install. Remove, then copy fresh.
-  for d in "$SRC"/skills/*/; do dst="$SKILLS/$(basename "$d")"; rm -rf "$dst"; cp -a "$d" "$dst"; done
-  echo "installed skills: $(ls "$SRC/skills" | tr '\n' ' ')"
-else
-  echo "(no skills/ to install yet)"
-fi
-
-# 3b. curated Claude Code config home for claude-local — exposes ONLY the small-model-skills, not every
-# user skill. A small model's tool selection degrades as the skill count grows, and each unused skill's
-# description is dead weight in an already-tight context. claude-local points CLAUDE_CONFIG_DIR here.
-CC_HOME="$(dirname "$CFG")/cc-home"
+# 3. install skills. cc-home always holds ONLY these skills (curated view for claude-local, whose small
+# model's tool-selection degrades as the skill count grows). The SCOPE decides whether they ALSO live in
+# ~/.claude/skills for normal sessions. rm each dest first: 'cp -a src dest' nests when dest already exists
+# (dest/src), silently keeping a stale SKILL.md on re-install.
 if compgen -G "$SRC/skills/*/" >/dev/null; then
   mkdir -p "$CC_HOME/skills"
-  rm -f "$CC_HOME"/skills/* 2>/dev/null || true
-  # symlink each smols skill so it stays in sync with the installed copy
-  for d in "$SRC"/skills/*/; do n="$(basename "$d")"; ln -sfn "$SKILLS/$n" "$CC_HOME/skills/$n"; done
+  for d in "$SRC"/skills/*/; do
+    n="$(basename "$d")"
+    if [ "$SCOPE" = local ]; then
+      # local: the real copy lives in cc-home; scrub the global dir so a normal `claude` won't load it.
+      rm -rf "$SKILLS/$n"
+      dst="$CC_HOME/skills/$n"; rm -rf "$dst"; cp -a "$d" "$dst"
+    else
+      # global: real copy in ~/.claude/skills (all sessions); cc-home just symlinks to it (stays in sync).
+      mkdir -p "$SKILLS"; rm -rf "$SKILLS/$n"; cp -a "$d" "$SKILLS/$n"
+      rm -rf "$CC_HOME/skills/$n"; ln -sfn "$SKILLS/$n" "$CC_HOME/skills/$n"
+    fi
+  done
+  mkdir -p "$CC_HOME"; printf '%s' "$SCOPE" > "$SCOPE_FILE"   # remember the scope for future bare re-runs
+  echo "installed skills [scope=$SCOPE]: $(ls "$SRC/skills" | tr '\n' ' ')"
   # Seed a credential-free, MCP-free minimal .claude.json so Claude Code doesn't re-prompt onboarding/theme
   # in this separate config home. Do NOT copy ~/.claude.json wholesale: it carries oauthAccount (credentials),
   # mcpServers (cloud servers curated/offline mode must not start), and projects (per-project trust/history).

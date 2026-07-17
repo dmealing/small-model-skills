@@ -185,6 +185,11 @@ smaller, cleaner context and tool surface. A side effect is that your global `~/
 `SMOLS_CURATED_SKILLS=0` to run against your full `~/.claude` config instead. Measured rationale:
 [`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
 
+**Only want these skills under `claude-local`?** By default `install.sh` installs them to `~/.claude/skills`
+so every `claude` session can use them. To keep them out of your normal sessions and expose them **only**
+to `claude-local`, install with `--local` (or `SMOLS_SKILLS_SCOPE=local`, or just answer the installer's
+prompt). Your choice is remembered on re-install; `./install.sh --help` lists the options.
+
 ### Which model? (what the benchmark says)
 
 `qwen3-coder-cc` is the tested offline default — fast (~40 tok/s on a 12 GB GPU) and reliable enough on the

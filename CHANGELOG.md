@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Skill install scope (`install.sh --local` / `SMOLS_SKILLS_SCOPE`)** — choose where skills install:
+  `global` (default) puts them in `~/.claude/skills` for every Claude Code session (plus a curated cc-home
+  view for `claude-local`); `local` installs to cc-home **only**, keeping them out of normal `claude`
+  sessions. Selectable via `--global`/`--local` flag, `SMOLS_SKILLS_SCOPE` env var, or an interactive
+  prompt (default global); the choice is remembered across re-installs. `./install.sh --help` documents it.
 - **`smart-health` probe + `disk-health` skill** — read-only SMART/drive-health monitoring for NVMe
   and SATA drives. Reports NVMe wear (`Percentage Used`), `Available Spare` vs threshold,
   `Critical Warning` flags, temperatures; SATA `Reallocated_Sector_Ct` and `Current_Pending_Sector`.

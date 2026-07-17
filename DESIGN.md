@@ -63,7 +63,7 @@ monitor/monitor.conf.example  smon configuration template
 modules/router/      sonicwall.sh (reference) + interface.md (how to add a vendor)
 skills/<name>/SKILL.md   runbooks, mirrors ~/.claude/skills layout
 config.example       generic config template
-install.sh           copy skills → ~/.claude/skills, link bin → PATH, create user config, dep-check
+install.sh           copy skills → ~/.claude/skills (or cc-home only, --local), link bin → PATH, config, dep-check
 README.md            setup directions for adopters (Ollama + qwen-coder + Claude-Code offline + skills)
 DESIGN.md            this file
 LICENSE              MIT
@@ -180,6 +180,13 @@ By default it also runs **curated-skills mode**: `CLAUDE_CONFIG_DIR` is repointe
 (`CLAUDE.md`, custom `agents/`/`commands/`) for a smaller, cleaner context a weak model handles better.
 Opt out with `SMOLS_CURATED_SKILLS=0`; measured rationale in
 [`docs/tuning-local-models.md`](docs/tuning-local-models.md#4-curated-skills).
+
+**Install scope** (`install.sh`) is a separate axis from curated-skills *mode*. By default the installer
+copies the skills to `~/.claude/skills`, so they load in **every** Claude Code session (a big model
+benefits from the same deterministic wrappers), and cc-home symlinks to them for `claude-local`. Pass
+`--local` (or `SMOLS_SKILLS_SCOPE=local`, or answer the install prompt) to install them into cc-home
+**only** — keeping them out of your normal `claude` sessions. The choice is recorded, so a later bare
+`./install.sh` keeps it instead of reverting to the default.
 
 ## Roadmap
 
