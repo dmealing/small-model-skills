@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# wan-health — read-only WAN failover health verdict, sourced from the wan-link-supervisor's
+# status.json. The supervisor is a separate (private) daemon that holds the firewall write
+# credentials and does the actual failover; this probe only reads its status file and reports
+# a verdict. Changes nothing.
+#
+# Decision tree (priority-ordered, first match wins — see docs/verdict-contract.md for the
+# general grammar this follows):
+#   1. FAIL WAN_PROBE_FAILED    — status.json missing/unreadable/invalid, or stale (see below)
+#   2. FAIL WAN_BOTH_DEGRADED   — state==BOTH_BAD_HOLD, or both primary and backup are dead
+#   3. WARN WAN_FLAP_SUPPRESSED — any link is under flap-damping suppression
+#   4. WARN WAN_DEGRADED        — active link isn't healthy, sensing failed this cycle, or the
+#                                  active member name doesn't match a known link (data anomaly)
+#   5. OK   WAN_BACKUP          — running on the backup WAN, healthy, by design/after failover
+#   6. OK   WAN_PRIMARY         — running on the primary WAN, healthy — normal steady state
+#
+# Config: WAN_HEALTH_STATUS (status.json path), WAN_HEALTH_MAX_AGE_S (staleness threshold, s).
+# Exit: 0 diagnosis ran (a FAIL verdict for a stale/missing status file is still a completed
+#       diagnosis), 1 only if the probe tool itself can't run (jq missing).
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+: "${WAN_HEALTH_STATUS:=${XDG_STATE_HOME:-$HOME/.local/state}/wanlink/status.json}"
+: "${WAN_HEALTH_MAX_AGE_S:=30}"   # status.json older than this (s) -> WAN_PROBE_FAILED (~2x the supervisor's ~15s cycle)
+
+smols_identity "Read-only: WAN failover health from the supervisor's status.json"
+
+have jq || { smols_verdict FAIL PROBE_FAILED "'jq' not installed (needed to parse status.json)"; smols_help "Install jq, then re-run"; exit 1; }
+
+now="$(date +%s)"
+
+smols_sec "status"
+smols_line "status file" "$WAN_HEALTH_STATUS"
+
+if [ ! -r "$WAN_HEALTH_STATUS" ]; then
+  smols_verdict FAIL WAN_PROBE_FAILED "supervisor status is missing -> the daemon may be down; check the wan-link-supervisor service."
+  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
+  exit 0
+fi
+
+raw="$(cat "$WAN_HEALTH_STATUS" 2>/dev/null)"
+fields_ok=0
+if [ -n "$raw" ] && printf '%s' "$raw" | jq -e '
+    type == "object"
+    and (.ts     | type) == "number"
+    and (.primary| type) == "string"
+    and (.backup | type) == "string"
+    and (.state  | type) == "string"
+    and (.links  | type) == "object"
+  ' >/dev/null 2>&1
+then fields_ok=1
+fi
+
+if [ "$fields_ok" != 1 ]; then
+  smols_verdict FAIL WAN_PROBE_FAILED "supervisor status is unreadable or not valid JSON -> the daemon may be down; check the wan-link-supervisor service."
+  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
+  exit 0
+fi
+
+ts="$(printf '%s' "$raw" | jq -r '.ts')"
+# raw_age keeps full precision for the threshold compare below; age is only for display
+# (rounding age to the nearest second before comparing would let e.g. 30.4s slip under a 30s max).
+raw_age="$(awk -v now="$now" -v ts="$ts" 'BEGIN{printf "%.6f", now-ts}')"
+age="$(awk -v a="$raw_age" 'BEGIN{printf "%.0f", a}')"
+smols_line "status age" "${age}s (max ${WAN_HEALTH_MAX_AGE_S}s)"
+
+if awk -v a="$raw_age" -v m="$WAN_HEALTH_MAX_AGE_S" 'BEGIN{exit !(a>m)}'; then
+  smols_verdict FAIL WAN_PROBE_FAILED "supervisor status is stale (${age}s old) -> the daemon may be down; check the wan-link-supervisor service."
+  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
+  exit 0
+fi
+
+active="$(printf '%s' "$raw" | jq -r 'if .active == null then "" else .active end')"
+primary="$(printf '%s' "$raw" | jq -r '.primary')"
+backup="$(printf '%s' "$raw" | jq -r '.backup')"
+state="$(printf '%s' "$raw" | jq -r '.state')"
+degraded_flag="$(printf '%s' "$raw" | jq -r '.degraded // false')"
+
+link_field(){ printf '%s' "$raw" | jq -r --arg n "$1" --arg f "$2" '.links[$n][$f] | if . == null then "" else . end'; }
+link_exists(){ printf '%s' "$raw" | jq -e --arg n "$1" '.links | has($n)' >/dev/null 2>&1; }
+lt(){ awk -v a="$1" -v b="$2" 'BEGIN{exit !(a<b)}'; }
+ge(){ awk -v a="$1" -v b="$2" 'BEGIN{exit !(a>=b)}'; }
+is_dead(){ local s="$1"; [ -z "$s" ] && return 0; lt "$s" 25; }             # missing score == dead (unusable)
+is_healthy(){ local s="$1" supp="$2"; [ -z "$s" ] && return 1; [ "$supp" = true ] && return 1; ge "$s" 80; }
+
+p_score=""; p_suppressed=""
+link_exists "$primary" && { p_score="$(link_field "$primary" score)"; p_suppressed="$(link_field "$primary" suppressed)"; }
+b_score=""; b_suppressed=""
+link_exists "$backup" && { b_score="$(link_field "$backup" score)"; b_suppressed="$(link_field "$backup" suppressed)"; }
+
+smols_sec "links"
+smols_line "$primary (primary)" "score=${p_score:-?} suppressed=${p_suppressed:-?} hard_up=$(link_field "$primary" hard_up)"
+smols_line "$backup (backup)"  "score=${b_score:-?} suppressed=${b_suppressed:-?} hard_up=$(link_field "$backup" hard_up)"
+smols_line "active" "${active:-<none>}"
+smols_line "state" "$state"
+
+any_suppressed="$(printf '%s' "$raw" | jq -r '[.links[] | (.suppressed // false)] | any')"
+sup_names="$(printf '%s' "$raw" | jq -r '[.links | to_entries[] | select(.value.suppressed==true) | .key] | join(",")')"
+
+p_dead=false; is_dead "$p_score" && p_dead=true
+b_dead=false; is_dead "$b_score" && b_dead=true
+both_degraded=false
+[ "$state" = "BOTH_BAD_HOLD" ] && both_degraded=true
+{ [ "$p_dead" = true ] && [ "$b_dead" = true ]; } && both_degraded=true
+
+active_exists=0
+[ -n "$active" ] && link_exists "$active" && active_exists=1
+a_score=""; a_suppressed="false"
+if [ "$active_exists" = 1 ]; then a_score="$(link_field "$active" score)"; a_suppressed="$(link_field "$active" suppressed)"; fi
+active_healthy=false
+[ "$active_exists" = 1 ] && is_healthy "$a_score" "$a_suppressed" && active_healthy=true
+
+smols_sec "verdict"
+if [ "$both_degraded" = true ]; then
+  smols_verdict FAIL WAN_BOTH_DEGRADED "both the primary and backup WAN are unusable (state=$state; primary score ${p_score:-?}, backup score ${b_score:-?}) -> total internet loss is likely."
+elif [ "$any_suppressed" = true ]; then
+  smols_verdict WARN WAN_FLAP_SUPPRESSED "flap damping is active on: ${sup_names:-a WAN} -> it flapped recently and is being held down to avoid oscillation."
+elif [ "$active_exists" != 1 ]; then
+  smols_verdict WARN WAN_DEGRADED "active WAN '${active:-<none>}' is not a recognized link in the supervisor's status (data anomaly) -> treating as degraded."
+elif [ "$degraded_flag" = true ]; then
+  smols_verdict WARN WAN_DEGRADED "the supervisor could not read the firewall this cycle (sensing failure) -> flying blind, but status is not yet stale."
+elif [ "$active_healthy" != true ]; then
+  smols_verdict WARN WAN_DEGRADED "active WAN ($active) is degraded: score ${a_score:-?} (needs >=80 and not suppressed)."
+elif [ "$active" = "$backup" ]; then
+  smols_verdict OK WAN_BACKUP "on the backup WAN ($active), healthy -> running on backup by design or after failover."
+else
+  smols_verdict OK WAN_PRIMARY "on the primary WAN ($active), healthy -> normal steady state."
+fi
+exit 0
