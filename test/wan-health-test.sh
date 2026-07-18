@@ -134,6 +134,19 @@ cat > "$f" <<EOF
 EOF
 out="$(run "$f")"; check "verdict tag" "verdict: FAIL WAN_PROBE_FAILED" "$out"
 
+echo "=== 14. jq not installed (probe tool itself can't run) -> FAIL WAN_PROBE_FAILED, exit 1 ==="
+# Every fixture above needs jq to build, so hide jq by running the probe under a sandbox PATH that
+# holds the host's core utilities but NOT jq -> `have jq` is false on an otherwise-faithful host.
+# (This path exits 1 — the tool can't run — unlike the daemon-down paths above, which exit 0.)
+SANDBOX="$TMP/nojq-bin"; mkdir -p "$SANDBOX"
+for t in bash readlink dirname uname grep ip awk cat date sed; do
+  loc="$(command -v "$t" 2>/dev/null)" && [ -x "$loc" ] && ln -s "$loc" "$SANDBOX/$t"
+done
+f="$TMP/any-status.json"; mk_status "$f" X1 X1 X2 HOLD false "$FRESH" 100 false 100 false
+out="$(PATH="$SANDBOX" WAN_HEALTH_STATUS="$f" "$PROBE" 2>/dev/null)"
+check "verdict tag" "verdict: FAIL WAN_PROBE_FAILED" "$out"
+check_rc "exit code 1 (probe tool itself can't run)" 1 "$(PATH="$SANDBOX" WAN_HEALTH_STATUS="$f" "$PROBE" >/dev/null 2>&1; echo $?)"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

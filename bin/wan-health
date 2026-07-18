@@ -25,7 +25,17 @@ BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/commo
 
 smols_identity "Read-only: WAN failover health from the supervisor's status.json"
 
-have jq || { smols_verdict FAIL PROBE_FAILED "'jq' not installed (needed to parse status.json)"; smols_help "Install jq, then re-run"; exit 1; }
+have jq || { smols_verdict FAIL WAN_PROBE_FAILED "'jq' not installed (needed to parse status.json)"; smols_help "Install jq, then re-run"; exit 1; }
+
+# probe_failed <reason> — status.json is missing/unreadable/stale, so the daemon looks down: emit the
+# canonical WAN_PROBE_FAILED verdict + the shared "check the service" help, then exit 0 (diagnosis ran).
+# (The jq-missing guard above is deliberately NOT routed here: it's a tool-can't-run failure with its
+# own "install jq" help and a distinct exit 1.)
+probe_failed(){
+  smols_verdict FAIL WAN_PROBE_FAILED "$1 -> the daemon may be down; check the wan-link-supervisor service."
+  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
+  exit 0
+}
 
 now="$(date +%s)"
 
@@ -33,9 +43,7 @@ smols_sec "status"
 smols_line "status file" "$WAN_HEALTH_STATUS"
 
 if [ ! -r "$WAN_HEALTH_STATUS" ]; then
-  smols_verdict FAIL WAN_PROBE_FAILED "supervisor status is missing -> the daemon may be down; check the wan-link-supervisor service."
-  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
-  exit 0
+  probe_failed "supervisor status is missing"
 fi
 
 raw="$(cat "$WAN_HEALTH_STATUS" 2>/dev/null)"
@@ -52,9 +60,7 @@ then fields_ok=1
 fi
 
 if [ "$fields_ok" != 1 ]; then
-  smols_verdict FAIL WAN_PROBE_FAILED "supervisor status is unreadable or not valid JSON -> the daemon may be down; check the wan-link-supervisor service."
-  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
-  exit 0
+  probe_failed "supervisor status is unreadable or not valid JSON"
 fi
 
 ts="$(printf '%s' "$raw" | jq -r '.ts')"
@@ -65,9 +71,7 @@ age="$(awk -v a="$raw_age" 'BEGIN{printf "%.0f", a}')"
 smols_line "status age" "${age}s (max ${WAN_HEALTH_MAX_AGE_S}s)"
 
 if awk -v a="$raw_age" -v m="$WAN_HEALTH_MAX_AGE_S" 'BEGIN{exit !(a>m)}'; then
-  smols_verdict FAIL WAN_PROBE_FAILED "supervisor status is stale (${age}s old) -> the daemon may be down; check the wan-link-supervisor service."
-  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
-  exit 0
+  probe_failed "supervisor status is stale (${age}s old)"
 fi
 
 active="$(printf '%s' "$raw" | jq -r 'if .active == null then "" else .active end')"
