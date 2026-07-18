@@ -90,6 +90,7 @@ check_rc "exit code 0 (diagnosis ran)" 0 "$(run_rc "$f")"
 echo "=== 7. missing status.json -> FAIL WAN_PROBE_FAILED ==="
 f="$TMP/does-not-exist.json"
 out="$(run "$f")"; check "verdict tag" "verdict: FAIL WAN_PROBE_FAILED" "$out"
+check "help points at router-status for live WAN state" "router-status" "$out"
 check_rc "exit code 0 (diagnosis ran)" 0 "$(run_rc "$f")"
 
 echo "=== 8. edge case: invalid JSON -> FAIL WAN_PROBE_FAILED ==="

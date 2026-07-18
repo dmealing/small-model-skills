@@ -33,7 +33,7 @@ have jq || { smols_verdict FAIL WAN_PROBE_FAILED "'jq' not installed (needed to 
 # own "install jq" help and a distinct exit 1.)
 probe_failed(){
   smols_verdict FAIL WAN_PROBE_FAILED "$1 -> the daemon may be down; check the wan-link-supervisor service."
-  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS"
+  smols_help "Check that the wan-link-supervisor service is running and writing $WAN_HEALTH_STATUS; for live WAN state right now, run: router-status"
   exit 0
 }
 

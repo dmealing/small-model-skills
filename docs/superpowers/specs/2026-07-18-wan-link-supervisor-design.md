@@ -105,7 +105,7 @@ A local Ollama call driven by a systemd **timer** (~2 min) plus an event-trigger
 
 ## Component 3 — `wan-health` probe (public engine, GET-only) + smon integration
 
-A new public probe following `smols_*` + verdict conventions. It reads the supervisor's `status.json` (and can enrich read-only via the existing GET-only `modules/router/sonicwall.sh`) and emits one verdict line:
+A new public probe following `smols_*` + verdict conventions. It reads the supervisor's `status.json` — and nothing else: no network, no credentials, works fully offline. Live router truth is deliberately left to the existing `router-status` probe (SNMP floor + the GET-only `modules/router/sonicwall.sh` REST enrichment); running both in the same smon sweep covers the supervisor-down case without muddying this probe's contract. On `FAIL WAN_PROBE_FAILED` the help text points the operator at `router-status`. It emits one verdict line:
 
 `verdict: <OK|WARN|FAIL> <TAG> — <prose>` with tags (priority-ordered, first match wins — the
 authoritative decision tree is the comment atop `bin/wan-health`):
@@ -118,7 +118,7 @@ authoritative decision tree is the comment atop `bin/wan-health`):
 - `FAIL WAN_PROBE_FAILED` — supervisor status missing/unreadable/stale, or `jq` not installed
   (control-plane blind — itself alert-worthy).
 
-smon consumes it on the normal ~10-min sweep: transition-based alerting (FAIL immediate, WARN sustained, recovery notes, quiet hours), Kuma heartbeat, and enrichment (`glm` online, `local` offline). This **absorbs `wan-failover-alert.sh`**: its email → smon `ha-push`; its voice announce → an HA script called by an `ha-script` backend; its state detection → the probe's verdict transitions (smon dedupes to one alert per real transition — strictly better than the current 1-minute cron, which under-counts sub-minute flaps).
+smon consumes it on the normal ~10-min sweep (paired with `router-status` in `SMON_PROBES`, so a dead supervisor never leaves smon blind to actual WAN state): transition-based alerting (FAIL immediate, WARN sustained, recovery notes, quiet hours), Kuma heartbeat, and enrichment (`glm` online, `local` offline). This **absorbs `wan-failover-alert.sh`**: its email → smon `ha-push`; its voice announce → an HA script called by an `ha-script` backend; its state detection → the probe's verdict transitions (smon dedupes to one alert per real transition — strictly better than the current 1-minute cron, which under-counts sub-minute flaps).
 
 ## Native companion change (do first, independently valuable)
 
