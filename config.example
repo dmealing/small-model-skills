@@ -58,6 +58,8 @@ FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetc
 # SMART_SPARE_WARN=20        # smart-health WARN (DRIVE_AGING) when NVMe 'Available Spare' <= this %
 # SMART_TEMP_WARN=70         # smart-health WARN (DRIVE_AGING) when any drive temp >= this °C
 # SMART_DEVICES=             # smart-health device list (blank = auto-detect physical disks via lsblk)
+# WAN_HEALTH_STATUS=         # wan-health: path to the wan-link-supervisor's status.json (blank = ${XDG_STATE_HOME:-$HOME/.local/state}/wanlink/status.json; the private supervisor writes it)
+# WAN_HEALTH_MAX_AGE_S=30    # wan-health FAIL (WAN_PROBE_FAILED) when status.json ts is older than this (s); ~2x the supervisor's ~15s cycle (raw age is compared, so 30.4s still trips)
 
 # --- File search (file-search skill / find-files) ---
 SEARCH_ROOT=            # default dir to search when none is given (blank = current dir; e.g. set to $HOME)
