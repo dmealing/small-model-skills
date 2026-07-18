@@ -107,13 +107,16 @@ A local Ollama call driven by a systemd **timer** (~2 min) plus an event-trigger
 
 A new public probe following `smols_*` + verdict conventions. It reads the supervisor's `status.json` (and can enrich read-only via the existing GET-only `modules/router/sonicwall.sh`) and emits one verdict line:
 
-`verdict: <OK|WARN|FAIL> <TAG> — <prose>` with tags:
-- `OK WAN_PRIMARY` — on primary, both healthy.
-- `OK WAN_BACKUP` — on backup, deliberately (failover working as intended); prose says why + how long.
-- `WARN WAN_DEGRADED` — a link degraded (loss/latency) but not switched, or on backup with primary recovering under dwell.
+`verdict: <OK|WARN|FAIL> <TAG> — <prose>` with tags (priority-ordered, first match wins — the
+authoritative decision tree is the comment atop `bin/wan-health`):
+- `OK WAN_PRIMARY` — on primary, the active link healthy (normal steady state).
+- `OK WAN_BACKUP` — on backup, healthy (failover working as intended); prose says why.
+- `WARN WAN_DEGRADED` — the active link is degraded (score <80 or suppressed), the supervisor could not sense
+  the firewall this cycle (`.degraded`), or the active member isn't a recognized link (data anomaly).
 - `WARN WAN_FLAP_SUPPRESSED` — a link is flap-suppressed (holding on backup by design).
 - `FAIL WAN_BOTH_DEGRADED` — both links unusable / `BOTH_BAD_HOLD`.
-- `FAIL WAN_PROBE_FAILED` — supervisor status stale/missing (control-plane blind — itself alert-worthy).
+- `FAIL WAN_PROBE_FAILED` — supervisor status missing/unreadable/stale, or `jq` not installed
+  (control-plane blind — itself alert-worthy).
 
 smon consumes it on the normal ~10-min sweep: transition-based alerting (FAIL immediate, WARN sustained, recovery notes, quiet hours), Kuma heartbeat, and enrichment (`glm` online, `local` offline). This **absorbs `wan-failover-alert.sh`**: its email → smon `ha-push`; its voice announce → an HA script called by an `ha-script` backend; its state detection → the probe's verdict transitions (smon dedupes to one alert per real transition — strictly better than the current 1-minute cron, which under-counts sub-minute flaps).
 

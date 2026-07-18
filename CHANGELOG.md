@@ -7,6 +7,26 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`wan-health` probe** (`bin/wan-health`) — read-only WAN-failover health verdict, the public face of the
+  `wan-link-supervisor` (a separate, **private** daemon that holds the firewall write creds and performs the
+  actual failover; engine-public / config-private split, like `smon`). The probe only reads the supervisor's
+  `status.json` and emits one `smon`-compatible verdict line, absorbing the alerting role of the legacy
+  `wan-failover-alert.sh`. Six verdict tags per the verdict contract, emitted by a strict priority-ordered,
+  first-match-wins decision tree: `OK WAN_PRIMARY` (on primary, healthy), `OK WAN_BACKUP` (on backup, healthy —
+  by design / after failover), `WARN WAN_DEGRADED` (active link degraded, the supervisor couldn't sense the
+  firewall this cycle, or the active member isn't a recognized link), `WARN WAN_FLAP_SUPPRESSED` (a link is
+  under flap-damping suppression), `FAIL WAN_BOTH_DEGRADED` (both links unusable / `BOTH_BAD_HOLD`),
+  `FAIL WAN_PROBE_FAILED` (status missing/unreadable/stale, or `jq` not installed — control-plane blind, itself
+  alert-worthy). Staleness is measured from the status `ts` field, **not** file mtime (shim fixtures are freshly
+  written, so their mtime is always "now"); default max age `WAN_HEALTH_MAX_AGE_S`=30s (~2× the supervisor's
+  ~15s cycle; the raw unrounded age is compared so a 30.4s age still trips). Status path via
+  `WAN_HEALTH_STATUS` (default `${XDG_STATE_HOME:-$HOME/.local/state}/wanlink/status.json`). Exit 0 when the
+  diagnosis ran (a FAIL for a stale/missing status is still a completed diagnosis); exit 1 only if the probe
+  itself can't run (`jq` missing). Needs `jq` (already a repo dependency via `bin/ollama-doctor`). Design spec:
+  `docs/superpowers/specs/2026-07-18-wan-link-supervisor-design.md`. Shim test: `test/wan-health-test.sh`
+  — one fixture per verdict tag plus edge cases (each `both_degraded` disjunct alone, a missing-required-field
+  `WAN_PROBE_FAILED`, the false-preserving `jq` regression, invalid JSON, and the `jq`-not-installed exit-1 path),
+  driving the real probe through real `jq` against real fixture JSON.
 - **Skill install scope (`install.sh --local` / `SMOLS_SKILLS_SCOPE`)** — choose where skills install:
   `global` (default) puts them in `~/.claude/skills` for every Claude Code session (plus a curated cc-home
   view for `claude-local`); `local` installs to cc-home **only**, keeping them out of normal `claude`
