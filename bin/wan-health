@@ -22,6 +22,13 @@ BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/commo
 
 : "${WAN_HEALTH_STATUS:=${XDG_STATE_HOME:-$HOME/.local/state}/wanlink/status.json}"
 : "${WAN_HEALTH_MAX_AGE_S:=30}"   # status.json older than this (s) -> WAN_PROBE_FAILED (~2x the supervisor's ~15s cycle)
+# Severity to emit when the active link is the *backup* WAN, healthy (a normal failover, not an outage).
+# Default OK keeps running-on-backup a non-event (steady state after a deliberate switch). Set to WARN to
+# make a sustained failover alert/announce — WARN's sustain (SMON_WARN_SUSTAIN sweeps) damps the sub-2-min
+# flaps that dominate real history, so only failovers that actually persist surface. FAIL is intentionally
+# NOT offered here: FAIL alerts instantly with no damping, so a flapping ISP would spam critical alerts.
+# (WAN_BOTH_DEGRADED remains FAIL regardless — that's a true outage.)
+: "${WAN_HEALTH_BACKUP_SEVERITY:=OK}"   # OK | WARN — severity for "healthy, on backup WAN"
 
 smols_identity "Read-only: WAN failover health from the supervisor's status.json"
 
@@ -126,7 +133,14 @@ elif [ "$degraded_flag" = true ]; then
 elif [ "$active_healthy" != true ]; then
   smols_verdict WARN WAN_DEGRADED "active WAN ($active) is degraded: score ${a_score:-?} (needs >=80 and not suppressed)."
 elif [ "$active" = "$backup" ]; then
-  smols_verdict OK WAN_BACKUP "on the backup WAN ($active), healthy -> running on backup by design or after failover."
+  # Running on the backup WAN, healthy. Severity is configurable (WAN_HEALTH_BACKUP_SEVERITY):
+  # OK   = steady-state non-event (default, public-safe); WARN = announce a sustained failover.
+  # Either way the verdict TAG stays WAN_BACKUP so downstream (HA voice) can key on the switch.
+  if [ "$WAN_HEALTH_BACKUP_SEVERITY" = WARN ]; then
+    smols_verdict WARN WAN_BACKUP "failed over to the backup WAN ($active), healthy -> running on backup, not the primary ($primary). Internet is up via backup; primary is not currently carrying traffic."
+  else
+    smols_verdict OK WAN_BACKUP "on the backup WAN ($active), healthy -> running on backup by design or after failover."
+  fi
 else
   smols_verdict OK WAN_PRIMARY "on the primary WAN ($active), healthy -> normal steady state."
 fi

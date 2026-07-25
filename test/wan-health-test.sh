@@ -68,6 +68,13 @@ f="$TMP/on-backup-healthy.json"; mk_status "$f" X2 X1 X2 SOFT_SWITCH false "$FRE
 out="$(run "$f")"; check "verdict tag" "verdict: OK WAN_BACKUP" "$out"
 check_rc "exit code 0" 0 "$(run_rc "$f")"
 
+echo "=== 2b. on backup + WAN_HEALTH_BACKUP_SEVERITY=WARN -> WARN WAN_BACKUP (announce a sustained failover) ==="
+out="$(WAN_HEALTH_BACKUP_SEVERITY=WARN WAN_HEALTH_STATUS="$f" "$PROBE" 2>/dev/null)"
+check "verdict tag" "verdict: WARN WAN_BACKUP" "$out"
+check_rc "exit code 0 (still a completed diagnosis)" 0 "$(WAN_HEALTH_BACKUP_SEVERITY=WARN WAN_HEALTH_STATUS="$f" "$PROBE" >/dev/null 2>&1; echo $?)"
+# default (unset) must stay OK — backward-compat guard
+out="$(run "$f")"; check "default severity unchanged (OK)" "verdict: OK WAN_BACKUP" "$out"
+
 echo "=== 3. active link degraded (score 40, not suppressed) -> WARN WAN_DEGRADED ==="
 f="$TMP/active-degraded.json"; mk_status "$f" X1 X1 X2 HOLD false "$FRESH" 40 false 100 false
 out="$(run "$f")"; check "verdict tag" "verdict: WARN WAN_DEGRADED" "$out"
