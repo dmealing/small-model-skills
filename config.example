@@ -41,6 +41,7 @@ RUNAWAY_CPU_PCT=50                  # runaway-hunter: flag processes above this 
 RUNAWAY_AGE_HOURS=4                 # ... AND running longer than this many hours
 RUNAWAY_OFFENDERS=                  # extra comm/name patterns to always flag, space-separated (e.g. "bun pop-upgrade")
 RUNAWAY_ZOMBIE_MAX=5                # ... and WARN on zombies only once this many pile up (a lone reapable zombie is ignored)
+RUNAWAY_WEDGE_RECHECK=5             # ... re-checking wedged (Z / D-U) procs after N sec, WARNing only on ones that PERSIST (filters load churn)
 KNOWN_BAD_KERNELS=                  # freeze-forensics: kernel versions to warn about, space-separated (blank = none)
 FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log.
                                     #   Host-specific; blank = off. Executed as code and hard-capped at 10s, but the

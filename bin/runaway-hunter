@@ -26,12 +26,33 @@ smols_sec "zombie / wedged (Z = defunct, D/U = uninterruptible)"
 # state is the first char of stat: Z zombie; D (Linux) / U (macOS) uninterruptible
 wedged="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1); comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} s=="Z"||s=="D"||s=="U" {printf "%s,%s,%s\n",$1,comm,$5}')"
 if [ -n "$wedged" ]; then printf '%s\n' "$wedged" | smols_toon wedged pid,comm,stat; else echo "  (none)"; fi
-# Verdict split: a lone (or few) zombie is harmless — the parent reaps it, and short-lived
-# helpers routinely flash through Z between exit and reap. Only a genuine pile-up of
-# >= RUNAWAY_ZOMBIE_MAX zombies (a parent that has STOPPED reaping) earns a WARN; any
-# D/U-state (uninterruptible) process always does, since that is a stuck driver or mount.
-zombie_n=$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1)} s=="Z"{n++} END{print n+0}')
-stuck_n=$(printf '%s\n'  "$rows" | awk '{s=substr($5,1,1)} s=="D"||s=="U"{n++} END{print n+0}')
+
+# PERSISTENCE CHECK — a single ps snapshot can't tell a real wedge from load-driven churn.
+# Under heavy fork/exit activity short-lived children flash through Z between exit and reap,
+# and normal disk I/O parks a process in D for milliseconds — so an instantaneous count
+# false-positives during busy periods. A REAL wedge PERSISTS: a parent that has stopped
+# reaping keeps the SAME zombie pids for many seconds; a process stuck on a dead mount or
+# driver stays in D/U the whole time. So we re-sample after RUNAWAY_WEDGE_RECHECK seconds
+# and count a process as wedged only if the SAME pid is STILL wedged in the second sample.
+# Churn collapses to ~0; a hung CIFS mount or a genuine reaping failure survives untouched.
+# The re-sample runs ONLY when snapshot A already saw something, so healthy sweeps stay fast.
+zpids_a="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1)} s=="Z"{print $1}')"
+dpids_a="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1)} s=="D"||s=="U"{print $1}')"
+zombie_inst=$(printf '%s\n' "$zpids_a" | awk 'NF{n++} END{print n+0}')
+stuck_inst=$(printf '%s\n'  "$dpids_a" | awk 'NF{n++} END{print n+0}')
+zombie_n=0; stuck_n=0
+if [ -n "$zpids_a$dpids_a" ]; then
+  sleep "$RUNAWAY_WEDGE_RECHECK"
+  snapB="$(mktemp)"; ps -eo pid=,stat= > "$snapB" 2>/dev/null
+  _persist() { # $1 = class (Z|DU); stdin = candidate pids from snapshot A; counts still-wedged in snapshot B
+    awk -v cls="$1" 'NR==FNR { st[$1]=substr($2,1,1); next }
+      { s=st[$1]; if (cls=="Z" && s=="Z") c++; else if (cls=="DU" && (s=="D"||s=="U")) c++ }
+      END { print c+0 }' "$snapB" -
+  }
+  zombie_n=$(printf '%s\n' "$zpids_a" | _persist Z)
+  stuck_n=$(printf '%s\n'  "$dpids_a" | _persist DU)
+  rm -f "$snapB"
+fi
 alarm=""; { [ "$stuck_n" -gt 0 ] || [ "$zombie_n" -ge "$RUNAWAY_ZOMBIE_MAX" ]; } && alarm=1
 
 offenders=""
@@ -51,13 +72,13 @@ elif [ -n "$offenders" ]; then
   smols_help "Inspect first: 'ps -fp <pid>'. If it's genuinely stuck or hot, 'kill <pid>', then only if it ignores that, 'kill -9 <pid>'. Never kill something mid-write."
 elif [ -n "$alarm" ]; then
   if [ "$stuck_n" -gt 0 ]; then
-    smols_verdict WARN WEDGED "$stuck_n process(es) stuck in uninterruptible (D/U) state — a stuck driver or mount, not a reapable zombie."
+    smols_verdict WARN WEDGED "$stuck_n process(es) STILL uninterruptible (D/U) after ${RUNAWAY_WEDGE_RECHECK}s — a hung mount or stuck driver, not a momentary I/O wait."
   else
-    smols_verdict WARN WEDGED "$zombie_n zombies piled up (>= $RUNAWAY_ZOMBIE_MAX) — a parent has stopped reaping its children."
+    smols_verdict WARN WEDGED "$zombie_n zombies persisted ${RUNAWAY_WEDGE_RECHECK}s (>= $RUNAWAY_ZOMBIE_MAX) — a parent has stopped reaping, not load-driven churn."
   fi
   smols_help "Zombies: inspect the PARENT ('ps -o ppid= -p <pid>' then 'ps -fp <ppid>') — reaping/restarting the parent clears them. Never 'kill -9' a D/U-state process; find what it's blocked on instead."
-elif [ "$zombie_n" -gt 0 ]; then
-  smols_verdict OK NOMINAL "$zombie_n harmless zombie(s) below the $RUNAWAY_ZOMBIE_MAX pile-up threshold (parent will reap); nothing hot-and-aged, no known offenders."
+elif [ "$zombie_inst" -gt 0 ] || [ "$stuck_inst" -gt 0 ]; then
+  smols_verdict OK NOMINAL "transient only — ${zombie_inst} zombie / ${stuck_inst} D-state seen, ${zombie_n} / ${stuck_n} still there after ${RUNAWAY_WEDGE_RECHECK}s (below WARN threshold); nothing hot-and-aged, no known offenders."
 else
   smols_verdict OK NOMINAL "nothing hot-and-aged, no zombies, no known offenders. If it still feels slow, run system-triage or disk-report."
 fi
