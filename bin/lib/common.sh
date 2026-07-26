@@ -77,6 +77,7 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 : "${RUNAWAY_CPU_PCT:=50}"
 : "${RUNAWAY_AGE_HOURS:=4}"
 : "${RUNAWAY_OFFENDERS:=}"
+: "${RUNAWAY_ZOMBIE_MAX:=5}"
 : "${KNOWN_BAD_KERNELS:=}"
 : "${FREEZE_REMOTE_LOG_CMD:=}"
 

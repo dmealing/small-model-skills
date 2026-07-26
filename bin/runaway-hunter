@@ -26,6 +26,13 @@ smols_sec "zombie / wedged (Z = defunct, D/U = uninterruptible)"
 # state is the first char of stat: Z zombie; D (Linux) / U (macOS) uninterruptible
 wedged="$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1); comm=$6; for(i=7;i<=NF;i++)comm=comm" "$i} s=="Z"||s=="D"||s=="U" {printf "%s,%s,%s\n",$1,comm,$5}')"
 if [ -n "$wedged" ]; then printf '%s\n' "$wedged" | smols_toon wedged pid,comm,stat; else echo "  (none)"; fi
+# Verdict split: a lone (or few) zombie is harmless — the parent reaps it, and short-lived
+# helpers routinely flash through Z between exit and reap. Only a genuine pile-up of
+# >= RUNAWAY_ZOMBIE_MAX zombies (a parent that has STOPPED reaping) earns a WARN; any
+# D/U-state (uninterruptible) process always does, since that is a stuck driver or mount.
+zombie_n=$(printf '%s\n' "$rows" | awk '{s=substr($5,1,1)} s=="Z"{n++} END{print n+0}')
+stuck_n=$(printf '%s\n'  "$rows" | awk '{s=substr($5,1,1)} s=="D"||s=="U"{n++} END{print n+0}')
+alarm=""; { [ "$stuck_n" -gt 0 ] || [ "$zombie_n" -ge "$RUNAWAY_ZOMBIE_MAX" ]; } && alarm=1
 
 offenders=""
 pat="$(printf '%s' "$RUNAWAY_OFFENDERS" | xargs | tr ' ' '|')"
@@ -42,9 +49,15 @@ if [ -n "$runaway" ]; then
 elif [ -n "$offenders" ]; then
   smols_verdict WARN KNOWN_OFFENDER "one or more processes match your RUNAWAY_OFFENDERS watch-list; check their cpu/age in the offenders table above (they may be idle or short-lived) before deciding to kill."
   smols_help "Inspect first: 'ps -fp <pid>'. If it's genuinely stuck or hot, 'kill <pid>', then only if it ignores that, 'kill -9 <pid>'. Never kill something mid-write."
-elif [ -n "$wedged" ]; then
-  smols_verdict WARN WEDGED "a lone zombie is usually harmless (its parent will reap it); a pile-up, or a D/U-state process, points at a stuck driver or mount."
+elif [ -n "$alarm" ]; then
+  if [ "$stuck_n" -gt 0 ]; then
+    smols_verdict WARN WEDGED "$stuck_n process(es) stuck in uninterruptible (D/U) state — a stuck driver or mount, not a reapable zombie."
+  else
+    smols_verdict WARN WEDGED "$zombie_n zombies piled up (>= $RUNAWAY_ZOMBIE_MAX) — a parent has stopped reaping its children."
+  fi
   smols_help "Zombies: inspect the PARENT ('ps -o ppid= -p <pid>' then 'ps -fp <ppid>') — reaping/restarting the parent clears them. Never 'kill -9' a D/U-state process; find what it's blocked on instead."
+elif [ "$zombie_n" -gt 0 ]; then
+  smols_verdict OK NOMINAL "$zombie_n harmless zombie(s) below the $RUNAWAY_ZOMBIE_MAX pile-up threshold (parent will reap); nothing hot-and-aged, no known offenders."
 else
   smols_verdict OK NOMINAL "nothing hot-and-aged, no zombies, no known offenders. If it still feels slow, run system-triage or disk-report."
 fi
