@@ -85,6 +85,11 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 # --- verdict thresholds (config-tunable; the monitoring probes key their WARN/FAIL on these) ---
 : "${DISK_WARN_PCT:=85}"     # fullest filesystem at/above this % -> disk-report WARN
 : "${DISK_CRIT_PCT:=95}"     # ...at/above this % -> disk-report FAIL
+# Network filesystems are slow/flaky, so disk-report handles them SEPARATELY from local disks:
+# they are kept OUT of the local-capacity df (which would hang if it walked an unresponsive
+# share) and instead probed one-by-one for reachability, each under its own wall-clock cap.
+: "${SMOLS_NET_FSTYPES:=cifs smb3 smbfs nfs nfs4 fuse.sshfs afpfs}"   # fs types treated as "network"
+: "${SMOLS_NET_PROBE_TIMEOUT:=5}"   # per-network-mount reachability cap (s); a slower mount is reported UNREACHABLE, never hangs the probe
 : "${LOAD_WARN_FACTOR:=1.5}" # 1-min load above cores*factor -> sys-diag WARN (HIGH_LOAD)
 : "${CPU_HOG_PCT:=90}"       # a single process at/above this %core -> sys-diag WARN (CPU_HOG)
 : "${SWAP_WARN_KB:=1048576}" # swap-in-use above this (KiB) -> sys-diag WARN (MEMORY_PRESSURE)

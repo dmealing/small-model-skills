@@ -64,13 +64,25 @@ smols_error_sources_this_boot(){
   smols_recent_errors | awk '{print $5}' | grep -v '^$' | sort | uniq -c | sort -rn
 }
 
-smols_df(){ df -h 2>/dev/null | awk 'NR==1 || !/devfs|map /'; }
+# LOCAL capacity view only. BSD df has no -x, so we drop devfs/automounter lines AND network
+# sources by pattern: smbfs/cifs sources start with "//", nfs sources look like "host:/path".
+# Network mounts are handled separately by smols_net_mounts + disk-report's reachability pass,
+# so a slow share can't hang the capacity view.
+_smols_df_is_local='NR==1 || (!/devfs|map / && $1 !~ /^\/\// && $1 !~ /:/)'
+smols_df(){ df -h 2>/dev/null | awk "$_smols_df_is_local"; }
 smols_df_fullest(){
-  df -P 2>/dev/null | awk 'NR>1 && !/devfs|map /{u=$5; gsub("%","",u); if(u+0>m){m=u+0;p=$6}} END{print p}'
+  df -P 2>/dev/null | awk 'NR>1 && !/devfs|map / && $1 !~ /^\/\// && $1 !~ /:/{u=$5; gsub("%","",u); if(u+0>m){m=u+0;p=$6}} END{print p}'
 }
-# smols_df_full_pct — the use% of the fullest real filesystem, as a bare integer. Empty if none.
+# smols_df_full_pct — the use% of the fullest real LOCAL filesystem, as a bare integer. Empty if none.
 smols_df_full_pct(){
-  df -P 2>/dev/null | awk 'NR>1 && !/devfs|map /{u=$5; gsub("%","",u); if(u+0>m)m=u+0} END{if(m!="")print m}'
+  df -P 2>/dev/null | awk 'NR>1 && !/devfs|map / && $1 !~ /^\/\// && $1 !~ /:/{u=$5; gsub("%","",u); if(u+0>m)m=u+0} END{if(m!="")print m}'
+}
+# smols_net_mounts — real network mounts as "fstype<TAB>mountpoint<TAB>source" from `mount`
+# (BSD has no /proc/mounts). A mount line is "src on /mnt (fstype, opts...)"; $4 holds "(fstype,".
+smols_net_mounts(){
+  mount 2>/dev/null | awk '
+    { t=$4; gsub(/[(,]/,"",t)
+      if (t ~ /^(smbfs|cifs|nfs|afpfs|webdav)$/) print t"\t"$3"\t"$1 }'
 }
 # Bounded (see os-linux.sh) — needs `gtimeout` (coreutils) to actually cap; degrades to uncapped otherwise.
 smols_du_top1(){ smols_timeout "${SMOLS_DU_TIMEOUT:-20}" du -x -h -d1 "$1" 2>/dev/null; }

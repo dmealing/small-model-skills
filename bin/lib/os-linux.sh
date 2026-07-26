@@ -26,15 +26,32 @@ smols_error_sources_this_boot(){
     | awk '{print $5}' | sed 's/\[[0-9]*\]:\?$//; s/:$//' | grep -v '^$' | sort | uniq -c | sort -rn
 }
 
-smols_df(){ df -h -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; }
+# LOCAL capacity view only. Beyond the pseudo/overlay types, this also excludes automount
+# triggers AND the network fs types (SMOLS_NET_FSTYPES) — a df that walked an unresponsive
+# network share would hang the whole probe, so network mounts are handled separately by
+# smols_net_mounts + disk-report's reachability pass. Excluding an absent type is a harmless
+# no-op, so this stays correct on hosts with no network mounts.
+_smols_df_local_x(){
+  printf '%s' '-x tmpfs -x devtmpfs -x squashfs -x overlay -x autofs -x fuse.portal'
+  local t; for t in ${SMOLS_NET_FSTYPES:-cifs nfs nfs4 smbfs fuse.sshfs}; do printf ' -x %s' "$t"; done
+}
+smols_df(){ df -h $(_smols_df_local_x) 2>/dev/null; }
 smols_df_fullest(){
-  df -P -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null \
+  df -P $(_smols_df_local_x) 2>/dev/null \
     | awk 'NR>1{u=$5; gsub("%","",u); if(u+0>m){m=u+0;p=$6}} END{print p}'
 }
-# smols_df_full_pct — the use% of the FULLEST real filesystem, as a bare integer (e.g. 87). Empty if none.
+# smols_df_full_pct — the use% of the FULLEST real LOCAL filesystem, as a bare integer (e.g. 87). Empty if none.
 smols_df_full_pct(){
-  df -P -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null \
+  df -P $(_smols_df_local_x) 2>/dev/null \
     | awk 'NR>1{u=$5; gsub("%","",u); if(u+0>m)m=u+0} END{if(m!="")print m}'
+}
+# smols_net_mounts — real network mounts as "fstype<TAB>mountpoint<TAB>source", read from
+# /proc/mounts, which never blocks (unlike df/stat on the mount itself). The concrete cifs/nfs
+# entry is what we report; the paired autofs trigger line for the same path is skipped.
+smols_net_mounts(){
+  awk -v list="${SMOLS_NET_FSTYPES:-cifs nfs nfs4 smbfs fuse.sshfs}" '
+    BEGIN{ n=split(list,a," "); for(i=1;i<=n;i++) want[a[i]]=1 }
+    want[$3]{ print $3"\t"$2"\t"$1 }' /proc/mounts 2>/dev/null
 }
 # Bounded: `du` over a full filesystem walks the whole tree and can take minutes; cap it so disk-report
 # stays responsive. On timeout, du is killed and output is empty — the caller reports that honestly.

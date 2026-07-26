@@ -42,6 +42,8 @@ RUNAWAY_AGE_HOURS=4                 # ... AND running longer than this many hour
 RUNAWAY_OFFENDERS=                  # extra comm/name patterns to always flag, space-separated (e.g. "bun pop-upgrade")
 RUNAWAY_ZOMBIE_MAX=5                # ... and WARN on zombies only once this many pile up (a lone reapable zombie is ignored)
 RUNAWAY_WEDGE_RECHECK=5             # ... re-checking wedged (Z / D-U) procs after N sec, WARNing only on ones that PERSIST (filters load churn)
+SMOLS_NET_FSTYPES="cifs smb3 smbfs nfs nfs4 fuse.sshfs afpfs"   # disk-report: fs types treated as slow "network" mounts (probed separately, kept out of the local-capacity df)
+SMOLS_NET_PROBE_TIMEOUT=5           # disk-report: per-network-mount reachability cap (s); a slower share is reported UNREACHABLE instead of hanging the probe
 KNOWN_BAD_KERNELS=                  # freeze-forensics: kernel versions to warn about, space-separated (blank = none)
 FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetch a remote netconsole/black-box log.
                                     #   Host-specific; blank = off. Executed as code and hard-capped at 10s, but the

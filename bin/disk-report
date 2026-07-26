@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # disk-report — read-only "what's using my disk?" analysis. Never deletes anything.
+# Split by concern, because local and network storage fail very differently:
+#   LOCAL disks (ext4/btrfs/vfat...) — fast + reliable, the real capacity risk. Fully analysed
+#     (usage, biggest dirs, hogs) and they DRIVE the WARN/CRIT verdict. df is restricted to local
+#     types (see smols_df) so it never walks — and never hangs on — a slow network share.
+#   NETWORK mounts (cifs/nfs...) — slow + flaky. Each is probed for reachability under its OWN
+#     wall-clock cap; an unresponsive one is reported UNREACHABLE, never a probe-wide timeout.
+#     A reachable share's fullness still counts toward the verdict; reachability flaps do NOT
+#     alarm here (a truly stuck mount wedges processes, which runaway-hunter catches).
 # Exit: 0 diagnosis ran (even if it found a problem), 1 tool itself failed.
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
@@ -14,7 +22,7 @@ if [ -z "$fs" ]; then
 fi
 full_pct="$(smols_df_full_pct)"
 
-smols_sec "filesystems"
+smols_sec "local filesystems (network shares checked separately below)"
 printf '%s\n' "$fs" | awk 'NR==1||/%/{print "  "$0}' | head -14
 
 target=$(smols_df_fullest)
@@ -59,14 +67,51 @@ if have docker; then
   fi
 fi
 
-smols_sec "verdict"
-fullest="${target}"
-if [ -n "$full_pct" ] && [ "$full_pct" -ge "$DISK_CRIT_PCT" ] 2>/dev/null; then
-  smols_verdict FAIL DISK_CRITICAL "fullest filesystem is ${full_pct}% used (>= ${DISK_CRIT_PCT}%) -> out-of-space is imminent; reclaim now (see space concentration above)."
-elif [ -n "$full_pct" ] && [ "$full_pct" -ge "$DISK_WARN_PCT" ] 2>/dev/null; then
-  smols_verdict WARN DISK_HIGH "fullest filesystem is ${full_pct}% used (>= ${DISK_WARN_PCT}%) -> plan to reclaim space (see space concentration above)."
+# --- network mounts: reachability, each under its OWN cap so a hung share never hangs the probe ---
+smols_sec "network mounts (reachability — each probed with a ${SMOLS_NET_PROBE_TIMEOUT:-5}s cap)"
+net_rows=""; net_unreachable=0; net_full_pct=""
+if [ -n "$(smols_net_mounts)" ]; then
+  while IFS=$'\t' read -r nfs nmp nsrc; do
+    [ -n "$nmp" ] || continue
+    nraw="$(smols_timeout "${SMOLS_NET_PROBE_TIMEOUT:-5}" df -P -h "$nmp" 2>/dev/null)"; nrc=$?
+    if smols_is_timeout "$nrc"; then
+      net_rows="${net_rows}${nmp},${nfs},UNREACHABLE (> ${SMOLS_NET_PROBE_TIMEOUT:-5}s),-
+"
+      net_unreachable=$((net_unreachable + 1))
+    elif [ -z "$nraw" ]; then
+      net_rows="${net_rows}${nmp},${nfs},error,-
+"
+    else
+      nuse="$(printf '%s\n' "$nraw" | awk 'NR==2{print $5}')"
+      nfree="$(printf '%s\n' "$nraw" | awk 'NR==2{print $4}')"
+      net_rows="${net_rows}${nmp},${nfs},ok,${nuse} used / ${nfree} free
+"
+      npct="${nuse%\%}"
+      if [ -n "$npct" ] && [ "$npct" -eq "$npct" ] 2>/dev/null; then
+        if [ -z "$net_full_pct" ] || [ "$npct" -gt "$net_full_pct" ]; then net_full_pct="$npct"; fi
+      fi
+    fi
+  done < <(smols_net_mounts)
+  printf '%s' "$net_rows" | grep -v '^$' | smols_toon net_mounts mountpoint,fstype,status,usage
 else
-  smols_verdict OK NOMINAL "fullest filesystem is ${full_pct:-?}% used; no filesystem is near capacity."
+  echo "  (none mounted)"
+fi
+
+smols_sec "verdict"
+# LOCAL capacity is the alert driver; a REACHABLE network share that is full also counts. An
+# UNREACHABLE network mount is only a note here — reachability flaps are transient, and a truly
+# stuck mount surfaces as wedged processes in runaway-hunter (the right probe for "stuck").
+net_note=""; [ "$net_unreachable" -gt 0 ] && net_note=" (${net_unreachable} network mount(s) slow/unreachable — see table above; not a local-disk issue)"
+warn_pct="$full_pct"; warn_where="local ${target}"
+if [ -n "$net_full_pct" ] && { [ -z "$warn_pct" ] || [ "$net_full_pct" -gt "$warn_pct" ] 2>/dev/null; }; then
+  warn_pct="$net_full_pct"; warn_where="a network share"
+fi
+if [ -n "$full_pct" ] && [ "$full_pct" -ge "$DISK_CRIT_PCT" ] 2>/dev/null; then
+  smols_verdict FAIL DISK_CRITICAL "local filesystem ${target} is ${full_pct}% used (>= ${DISK_CRIT_PCT}%) -> out-of-space is imminent; reclaim now (see space concentration above).${net_note}"
+elif [ -n "$warn_pct" ] && [ "$warn_pct" -ge "$DISK_WARN_PCT" ] 2>/dev/null; then
+  smols_verdict WARN DISK_HIGH "${warn_where} is ${warn_pct}% used (>= ${DISK_WARN_PCT}%) -> plan to reclaim space (see above).${net_note}"
+else
+  smols_verdict OK NOMINAL "local fullest (${target}) ${full_pct:-?}% used; no filesystem near capacity.${net_note}"
 fi
 echo "  Safe things a human can reclaim after confirming:"
 smols_help \
