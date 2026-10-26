@@ -66,7 +66,7 @@ smon                 # a real sweep (what cron runs)
 See `monitor.conf.example` for every key. The important ones:
 
 - **Probes**: `SMON_PROBES` (which probes to run)
-- **Notify**: `SMON_NOTIFY` (`ha-push kuma stdout matrix`), `SMON_FALLBACK_NOTIFY` (tried when
+- **Notify**: `SMON_NOTIFY` (`ha-push ha-script http-api matrix kuma stdout`), `SMON_FALLBACK_NOTIFY` (tried when
   primary backends fail — e.g. `matrix` for HA-down scenarios)
 - **Alert policy**: `SMON_WARN_SUSTAIN`, `SMON_QUIET_START`/`END` (FAIL and recovery bypass
   quiet hours), `SMON_FAIL_REMIND_SWEEPS` (re-push standing FAIL every N sweeps; 0=never),
@@ -75,8 +75,15 @@ See `monitor.conf.example` for every key. The important ones:
 - **Enrichment**: `SMON_BRAIN` (`glm|local|none`)
 
 Backends: `ha-push` (Home Assistant mobile push), `kuma` (Uptime Kuma heartbeat), `matrix`
-(Matrix room via client-server API), `stdout`. Matrix config: `SMON_MATRIX_URL` (homeserver),
+(Matrix room via client-server API), `http-api` (see below), `stdout`. Matrix config: `SMON_MATRIX_URL` (homeserver),
 `SMON_MATRIX_ROOM` (!room:server), `SMON_MATRIX_TOKEN_CMD` (prints access token).
+
+`http-api` POSTs `{"message": "<title>\n<body>\n(<UTC time>)", "source": "<label>"}` as JSON to
+`SMON_NOTIFY_API_URL` with an `X-API-Key` header read from `SMON_NOTIFY_API_KEY_FILE` (a 0600 file holding
+the bare key or a `NAME=value` line; it reaches curl via a temporary header file, never argv).
+`SMON_NOTIFY_API_SOURCE` sets the label (default `smon-<hostname>`, max 40 chars; the message is cut to 1000).
+It counts as delivered only on HTTP 200 with `delivered` or `deduped` true; anything else returns non-zero so
+`SMON_FALLBACK_NOTIFY` backends are tried.
 
 Probe thresholds themselves (`DISK_WARN_PCT`, `TEMP_WARN_C`, …) live in the probes' own config
 (`~/.config/small-model-skills/config`); smon does not re-implement them.
