@@ -11,7 +11,7 @@ All notable changes to this project are documented here. The format is based on
   `wan-link-supervisor` (a separate, **private** daemon that holds the firewall write creds and performs the
   actual failover; engine-public / config-private split, like `smon`). The probe only reads the supervisor's
   `status.json` and emits one `smon`-compatible verdict line, absorbing the alerting role of the legacy
-  `wan-failover-alert.sh`. Six verdict tags per the verdict contract, emitted by a strict priority-ordered,
+  `wan-failover-alert.sh`. Nine verdict tags per the verdict contract (the three failover-failure tags are described below), emitted by a strict priority-ordered,
   first-match-wins decision tree: `OK WAN_PRIMARY` (on primary, healthy), `OK WAN_BACKUP` (on backup, healthy —
   by design / after failover), `WARN WAN_DEGRADED` (active link degraded, the supervisor couldn't sense the
   firewall this cycle, or the active member isn't a recognized link), `WARN WAN_FLAP_SUPPRESSED` (a link is
