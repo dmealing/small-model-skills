@@ -11,7 +11,8 @@ All notable changes to this project are documented here. The format is based on
   (`SMON_NOTIFY_API_URL`, `SMON_NOTIFY_API_KEY_FILE`, `SMON_NOTIFY_API_SOURCE`) with an `X-API-Key` header taken
   from a 0600 key file (never on argv). Delivered only on HTTP 200 with `delivered`/`deduped` true, otherwise it
   fails so `SMON_FALLBACK_NOTIFY` runs; `SMON_FALLBACK_NOTIFY` now applies to any failed primary backend, not
-  just `ha-push`. Payload shaping (`notify_api_payload`) is unit-tested in `monitor/test/smon-notify-payload-test.sh`;
+  just `ha-push`. Payload shaping, key-file parsing and the delivery decision (`notify_api_payload`, `notify_api_key`,
+  `notify_api_delivered`) are unit-tested in `monitor/test/smon-notify-payload-test.sh`;
   `monitor/monitor.conf.example` documents the keys.
 - **`wan-health` probe** (`bin/wan-health`) — read-only WAN-failover health verdict, the public face of the
   `wan-link-supervisor` (a separate, **private** daemon that holds the firewall write creds and performs the

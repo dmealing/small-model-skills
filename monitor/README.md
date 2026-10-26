@@ -80,7 +80,7 @@ Backends: `ha-push` (Home Assistant mobile push), `kuma` (Uptime Kuma heartbeat)
 
 `http-api` POSTs `{"message": "<title>\n<body>\n(<UTC time>)", "source": "<label>"}` as JSON to
 `SMON_NOTIFY_API_URL` with an `X-API-Key` header read from `SMON_NOTIFY_API_KEY_FILE` (a 0600 file holding
-the bare key or a `NAME=value` line; it reaches curl via a temporary header file, never argv).
+the bare key or a `NAME=value` line; blank and `#` lines are skipped, surrounding quotes removed; it reaches curl via a temporary header file, never argv).
 `SMON_NOTIFY_API_SOURCE` sets the label (default `smon-<hostname>`, max 40 chars; the message is cut to 1000).
 It counts as delivered only on HTTP 200 with `delivered` or `deduped` true; anything else returns non-zero so
 `SMON_FALLBACK_NOTIFY` backends are tried.

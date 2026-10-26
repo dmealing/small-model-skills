@@ -210,7 +210,7 @@ notify_api_delivered(){
 
 # notify_api <title> <body> — POST {message, source} to SMON_NOTIFY_API_URL with an X-API-Key
 # header. The key comes from SMON_NOTIFY_API_KEY_FILE and reaches curl through a 0600 header file,
-# never argv. The message ends with a UTC timestamp. Returns 0 only on HTTP 200 with
+# never argv. The message ends with a UTC timestamp (lost if the message is cut to 1000 characters). Returns 0 only on HTTP 200 with
 # "delivered" or "deduped" true, non-zero otherwise (so notify_send can fall back).
 notify_api(){
   local title="$1" body="$2" key hdr out code resp logresp msg
