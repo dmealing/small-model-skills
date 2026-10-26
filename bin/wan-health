@@ -10,7 +10,8 @@
 #   2. FAIL WAN_BOTH_DEGRADED   — state==BOTH_BAD_HOLD, or both primary and backup are dead
 #   3. FAIL WAN_SWITCH_FAILED   — the supervisor's last WAN_HEALTH_WRITE_FAIL_MAX rank writes in a
 #                                  row failed (status.write_failures): it wants to switch and can't
-#   4. WARN WAN_SWITCH_HELD     — the supervisor wants to switch but runs in dry-run (status.dry_run)
+#   4. WARN WAN_SWITCH_HELD     — the supervisor wants to switch (intended_rank_order[0] is not the
+#                                  active link) but runs in dry-run (status.dry_run)
 #   5. WARN WAN_FLAP_SUPPRESSED — any link is under flap-damping suppression
 #   6. WARN WAN_DEGRADED        — active link isn't healthy, sensing failed this cycle, or the
 #                                  active member name doesn't match a known link (data anomaly)
@@ -151,7 +152,7 @@ if [ "$both_degraded" = true ]; then
   smols_verdict FAIL WAN_BOTH_DEGRADED "both the primary and backup WAN are unusable (state=$state; primary score ${p_score:-?}, backup score ${b_score:-?}) -> total internet loss is likely."
 elif [ "$WAN_HEALTH_WRITE_FAIL_MAX" -gt 0 ] 2>/dev/null && ge "$write_failures" "$WAN_HEALTH_WRITE_FAIL_MAX"; then
   smols_verdict FAIL WAN_SWITCH_FAILED "the supervisor tried to move traffic to $write_target and the firewall refused $write_failures times in a row ($write_error) -> internet is still on ${active:-?}; failover is not working."
-elif [ "$dry_run_flag" = true ]; then
+elif [ "$dry_run_flag" = true ] && [ "$intended_target" != "?" ] && [ "$intended_target" != "$active" ]; then
   smols_verdict WARN WAN_SWITCH_HELD "the supervisor wants to move traffic to $intended_target but runs in dry-run, so nothing was switched (${reason:-no reason recorded}) -> internet is still on ${active:-?}."
 elif [ "$any_suppressed" = true ]; then
   smols_verdict WARN WAN_FLAP_SUPPRESSED "flap damping is active on: ${sup_names:-a WAN} -> it flapped recently and is being held down to avoid oscillation."

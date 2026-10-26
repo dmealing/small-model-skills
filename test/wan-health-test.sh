@@ -187,6 +187,13 @@ out="$(run "$f")"; check "verdict tag" "verdict: WARN WAN_SWITCH_HELD" "$out"
 check "names the wanted link" "move traffic to X2" "$out"
 check "carries the supervisor's reason" "X2 leads X1 by 75" "$out"
 
+echo "=== 16b. dry-run but intended == active (nothing to switch) -> no WAN_SWITCH_HELD ==="
+with_fields "$f" '.active = "X1" | .intended_rank_order = ["X1","X2"]'
+out="$(run "$f")"; check "no switch-held verdict" "verdict: WARN WAN_FLAP_SUPPRESSED" "$out"
+f="$TMP/dry-run-idle.json"; mk_status "$f" X1 X1 X2 HOLD false "$FRESH" 100 false 100 false
+with_fields "$f" '.dry_run = true | .intended_rank_order = ["X1","X2"]'
+out="$(run "$f")"; check "healthy dry-run stays OK" "verdict: OK WAN_PRIMARY" "$out"
+
 echo "=== 17. primary healthy now but 3 bad cycles in 10 min -> WARN WAN_PRIMARY_UNSTABLE ==="
 f="$TMP/primary-unstable.json"; mk_status "$f" X1 X1 X2 HOLD false "$FRESH" 100 false 100 false
 with_fields "$f" '.links.X1.unhealthy_cycles_10m = 3 | .links.X1.min_score_10m = 45 | .links.X2.unhealthy_cycles_10m = 0'
