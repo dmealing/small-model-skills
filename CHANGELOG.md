@@ -27,6 +27,14 @@ All notable changes to this project are documented here. The format is based on
   — one fixture per verdict tag plus edge cases (each `both_degraded` disjunct alone, a missing-required-field
   `WAN_PROBE_FAILED`, the false-preserving `jq` regression, invalid JSON, and the `jq`-not-installed exit-1 path),
   driving the real probe through real `jq` against real fixture JSON.
+- **`wan-health` failover-failure rules** — three new verdicts, matching the status fields the supervisor now writes
+  (`write_failures`, `dry_run`, `links.<name>.unhealthy_cycles_10m` / `min_score_10m`). `FAIL WAN_SWITCH_FAILED`: the
+  supervisor's last `WAN_HEALTH_WRITE_FAIL_MAX` (default 3, 0 = off) rank writes in a row failed, so failover is not
+  working; ranks just below `WAN_BOTH_DEGRADED`. `WARN WAN_SWITCH_HELD`: the supervisor wants to switch but runs in
+  dry-run (`dry_run`), so nothing moved. `WARN WAN_PRIMARY_UNSTABLE`: on the primary and healthy now, but it scored
+  below healthy in >= `WAN_HEALTH_PRIMARY_BAD_CYCLES` (default 3, 0 = off) of the supervisor's cycles in the last 10
+  minutes. Fields absent from an older supervisor's `status.json` default to "nothing wrong", so old verdicts are
+  unchanged. Tests: `test/wan-health-test.sh` cases 15-17d.
 - **Skill install scope (`install.sh --local` / `SMOLS_SKILLS_SCOPE`)** — choose where skills install:
   `global` (default) puts them in `~/.claude/skills` for every Claude Code session (plus a curated cc-home
   view for `claude-local`); `local` installs to cc-home **only**, keeping them out of normal `claude`

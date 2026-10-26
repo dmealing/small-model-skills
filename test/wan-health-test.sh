@@ -155,6 +155,59 @@ out="$(PATH="$SANDBOX" WAN_HEALTH_STATUS="$f" "$PROBE" 2>/dev/null)"
 check "verdict tag" "verdict: FAIL WAN_PROBE_FAILED" "$out"
 check_rc "exit code 1 (probe tool itself can't run)" 1 "$(PATH="$SANDBOX" WAN_HEALTH_STATUS="$f" "$PROBE" >/dev/null 2>&1; echo $?)"
 
+# with_fields <file> <jq-expr> — add newer supervisor fields to a fixture in place.
+with_fields(){ local f="$1" expr="$2"; jq "$expr" "$f" > "$f.tmp" && mv "$f.tmp" "$f"; }
+
+echo "=== 15. 3 failed rank writes in a row -> FAIL WAN_SWITCH_FAILED, with target and error ==="
+f="$TMP/switch-failed.json"; mk_status "$f" X1 X1 X2 HARD_DOWN_SWITCH false "$FRESH" 0 false 100 false
+with_fields "$f" '.write_failures = 3 | .last_write_attempt = {"ts": 1, "order": ["X2","X1"], "ok": false, "error": "could not enter config mode (config-mode=401)"}'
+out="$(run "$f")"; check "verdict tag" "verdict: FAIL WAN_SWITCH_FAILED" "$out"
+check "names the target link" "move traffic to X2" "$out"
+check "carries the firewall error" "could not enter config mode" "$out"
+check_rc "exit code 0" 0 "$(run_rc "$f")"
+
+echo "=== 15b. 2 failures (below the default max of 3) -> no WAN_SWITCH_FAILED yet ==="
+f="$TMP/switch-failed-2.json"; mk_status "$f" X1 X1 X2 HOLD false "$FRESH" 100 false 100 false
+with_fields "$f" '.write_failures = 2 | .last_write_attempt = {"ts": 1, "order": ["X2","X1"], "ok": false, "error": "x"}'
+out="$(run "$f")"; check "still OK WAN_PRIMARY" "verdict: OK WAN_PRIMARY" "$out"
+
+echo "=== 15c. WAN_HEALTH_WRITE_FAIL_MAX=1 -> one failure is enough ==="
+out="$(WAN_HEALTH_WRITE_FAIL_MAX=1 WAN_HEALTH_STATUS="$f" "$PROBE" 2>/dev/null)"
+check "verdict tag" "verdict: FAIL WAN_SWITCH_FAILED" "$out"
+
+echo "=== 15d. both lines dead outranks a failed switch ==="
+f="$TMP/both-dead-and-failed.json"; mk_status "$f" X1 X1 X2 BOTH_BAD_HOLD false "$FRESH" 0 false 0 false
+with_fields "$f" '.write_failures = 5'
+out="$(run "$f")"; check "verdict tag" "verdict: FAIL WAN_BOTH_DEGRADED" "$out"
+
+echo "=== 16. dry-run supervisor wants a switch -> WARN WAN_SWITCH_HELD (outranks flap suppression) ==="
+f="$TMP/switch-held.json"; mk_status "$f" X1 X1 X2 SOFT_SWITCH false "$FRESH" 25 true 100 false
+with_fields "$f" '.dry_run = true | .intended_rank_order = ["X2","X1"] | .reason = "X2 leads X1 by 75 (>= 20) sustained 301s; soft-switching"'
+out="$(run "$f")"; check "verdict tag" "verdict: WARN WAN_SWITCH_HELD" "$out"
+check "names the wanted link" "move traffic to X2" "$out"
+check "carries the supervisor's reason" "X2 leads X1 by 75" "$out"
+
+echo "=== 17. primary healthy now but 3 bad cycles in 10 min -> WARN WAN_PRIMARY_UNSTABLE ==="
+f="$TMP/primary-unstable.json"; mk_status "$f" X1 X1 X2 HOLD false "$FRESH" 100 false 100 false
+with_fields "$f" '.links.X1.unhealthy_cycles_10m = 3 | .links.X1.min_score_10m = 45 | .links.X2.unhealthy_cycles_10m = 0'
+out="$(run "$f")"; check "verdict tag" "verdict: WARN WAN_PRIMARY_UNSTABLE" "$out"
+check "says how many and how bad" "3 of the supervisor's checks" "$out"
+check "lowest score shown" "lowest score 45" "$out"
+
+echo "=== 17b. 2 bad cycles (below default 3) -> OK WAN_PRIMARY ==="
+with_fields "$f" '.links.X1.unhealthy_cycles_10m = 2'
+out="$(run "$f")"; check "verdict tag" "verdict: OK WAN_PRIMARY" "$out"
+
+echo "=== 17c. WAN_HEALTH_PRIMARY_BAD_CYCLES=0 turns the rule off ==="
+with_fields "$f" '.links.X1.unhealthy_cycles_10m = 9'
+out="$(WAN_HEALTH_PRIMARY_BAD_CYCLES=0 WAN_HEALTH_STATUS="$f" "$PROBE" 2>/dev/null)"
+check "verdict tag" "verdict: OK WAN_PRIMARY" "$out"
+
+echo "=== 17d. on backup, bad primary cycles do not mask WAN_BACKUP ==="
+f="$TMP/on-backup-primary-bad.json"; mk_status "$f" X2 X1 X2 SOFT_SWITCH false "$FRESH" 40 false 100 false
+with_fields "$f" '.links.X1.unhealthy_cycles_10m = 9'
+out="$(run "$f")"; check "verdict tag" "verdict: OK WAN_BACKUP" "$out"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

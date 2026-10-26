@@ -113,6 +113,10 @@ authoritative decision tree is the comment atop `bin/wan-health`):
 - `OK WAN_BACKUP` — on backup, healthy (failover working as intended); prose says why.
 - `WARN WAN_DEGRADED` — the active link is degraded (score <80 or suppressed), the supervisor could not sense
   the firewall this cycle (`.degraded`), or the active member isn't a recognized link (data anomaly).
+- `FAIL WAN_SWITCH_FAILED` — the supervisor's last N rank writes in a row failed (`.write_failures`): it wants to
+  switch and cannot. `WARN WAN_SWITCH_HELD` — it wants to switch but runs in dry-run (`.dry_run`).
+- `WARN WAN_PRIMARY_UNSTABLE` — on the primary and healthy, but it scored below healthy in several cycles of the
+  last 10 minutes (`links.<primary>.unhealthy_cycles_10m`).
 - `WARN WAN_FLAP_SUPPRESSED` — a link is flap-suppressed (holding on backup by design).
 - `FAIL WAN_BOTH_DEGRADED` — both links unusable / `BOTH_BAD_HOLD`.
 - `FAIL WAN_PROBE_FAILED` — supervisor status missing/unreadable/stale, or `jq` not installed
