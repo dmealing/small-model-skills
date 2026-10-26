@@ -8,13 +8,23 @@
 # general grammar this follows):
 #   1. FAIL WAN_PROBE_FAILED    — status.json missing/unreadable/invalid, or stale (see below)
 #   2. FAIL WAN_BOTH_DEGRADED   — state==BOTH_BAD_HOLD, or both primary and backup are dead
-#   3. WARN WAN_FLAP_SUPPRESSED — any link is under flap-damping suppression
-#   4. WARN WAN_DEGRADED        — active link isn't healthy, sensing failed this cycle, or the
+#   3. FAIL WAN_SWITCH_FAILED   — the supervisor's last WAN_HEALTH_WRITE_FAIL_MAX rank writes in a
+#                                  row failed (status.write_failures): it wants to switch and can't
+#   4. WARN WAN_SWITCH_HELD     — the supervisor wants to switch (intended_rank_order[0] is not the
+#                                  active link) but runs in dry-run (status.dry_run)
+#   5. WARN WAN_FLAP_SUPPRESSED — any link is under flap-damping suppression
+#   6. WARN WAN_DEGRADED        — active link isn't healthy, sensing failed this cycle, or the
 #                                  active member name doesn't match a known link (data anomaly)
-#   5. OK   WAN_BACKUP          — running on the backup WAN, healthy, by design/after failover
-#   6. OK   WAN_PRIMARY         — running on the primary WAN, healthy — normal steady state
+#   7. WARN WAN_PRIMARY_UNSTABLE — on the primary and healthy right now, but it scored below healthy
+#                                  in >= WAN_HEALTH_PRIMARY_BAD_CYCLES of the supervisor's cycles in
+#                                  the last 10 minutes (links.<primary>.unhealthy_cycles_10m)
+#   8. OK   WAN_BACKUP          — running on the backup WAN, healthy, by design/after failover
+#   9. OK   WAN_PRIMARY         — running on the primary WAN, healthy — normal steady state
 #
-# Config: WAN_HEALTH_STATUS (status.json path), WAN_HEALTH_MAX_AGE_S (staleness threshold, s).
+# Config: WAN_HEALTH_STATUS (status.json path), WAN_HEALTH_MAX_AGE_S (staleness threshold, s),
+#         WAN_HEALTH_WRITE_FAIL_MAX, WAN_HEALTH_PRIMARY_BAD_CYCLES (see below).
+# Fields added to status.json later (write_failures, dry_run, unhealthy_cycles_10m) default to
+# "nothing wrong" when absent, so an older supervisor still gets the original verdicts.
 # Exit: 0 diagnosis ran (a FAIL verdict for a stale/missing status file is still a completed
 #       diagnosis), 1 only if the probe tool itself can't run (jq missing).
 set -uo pipefail
@@ -29,6 +39,13 @@ BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/commo
 # NOT offered here: FAIL alerts instantly with no damping, so a flapping ISP would spam critical alerts.
 # (WAN_BOTH_DEGRADED remains FAIL regardless — that's a true outage.)
 : "${WAN_HEALTH_BACKUP_SEVERITY:=OK}"   # OK | WARN — severity for "healthy, on backup WAN"
+# Failed rank writes in a row before FAIL WAN_SWITCH_FAILED. The supervisor retries every cycle
+# (~35 s), so 3 is about 1-2 minutes of refusals; 1 would page on a single curl timeout. 0 = off.
+: "${WAN_HEALTH_WRITE_FAIL_MAX:=3}"
+# Primary cycles below healthy (score < 80) in the supervisor's trailing 10-minute window before
+# WARN WAN_PRIMARY_UNSTABLE. One cycle is ~9 pings, so one lost ping already makes a bad cycle;
+# 3 in 10 minutes is a pattern, not a stray drop. WARN still needs SMON_WARN_SUSTAIN sweeps. 0 = off.
+: "${WAN_HEALTH_PRIMARY_BAD_CYCLES:=3}"
 
 smols_identity "Read-only: WAN failover health from the supervisor's status.json"
 
@@ -86,6 +103,12 @@ primary="$(printf '%s' "$raw" | jq -r '.primary')"
 backup="$(printf '%s' "$raw" | jq -r '.backup')"
 state="$(printf '%s' "$raw" | jq -r '.state')"
 degraded_flag="$(printf '%s' "$raw" | jq -r '.degraded // false')"
+write_failures="$(printf '%s' "$raw" | jq -r '(.write_failures // 0) | tostring')"
+write_error="$(printf '%s' "$raw" | jq -r '.last_write_attempt.error // "no error recorded"')"
+write_target="$(printf '%s' "$raw" | jq -r '(.last_write_attempt.order // .rank_order // [])[0] // "?"')"
+dry_run_flag="$(printf '%s' "$raw" | jq -r '.dry_run // false')"
+intended_target="$(printf '%s' "$raw" | jq -r '(.intended_rank_order // [])[0] // "?"')"
+reason="$(printf '%s' "$raw" | jq -r '.reason // ""' | cut -c1-200)"
 
 link_field(){ printf '%s' "$raw" | jq -r --arg n "$1" --arg f "$2" '.links[$n][$f] | if . == null then "" else . end'; }
 link_exists(){ printf '%s' "$raw" | jq -e --arg n "$1" '.links | has($n)' >/dev/null 2>&1; }
@@ -104,6 +127,9 @@ smols_line "$primary (primary)" "score=${p_score:-?} suppressed=${p_suppressed:-
 smols_line "$backup (backup)"  "score=${b_score:-?} suppressed=${b_suppressed:-?} hard_up=$(link_field "$backup" hard_up)"
 smols_line "active" "${active:-<none>}"
 smols_line "state" "$state"
+smols_line "write failures" "$write_failures in a row"
+p_bad="$(link_field "$primary" unhealthy_cycles_10m)"; p_min="$(link_field "$primary" min_score_10m)"
+smols_line "$primary last 10 min" "bad cycles=${p_bad:-?} min score=${p_min:-?}"
 
 any_suppressed="$(printf '%s' "$raw" | jq -r '[.links[] | (.suppressed // false)] | any')"
 sup_names="$(printf '%s' "$raw" | jq -r '[.links | to_entries[] | select(.value.suppressed==true) | .key] | join(",")')"
@@ -124,6 +150,10 @@ active_healthy=false
 smols_sec "verdict"
 if [ "$both_degraded" = true ]; then
   smols_verdict FAIL WAN_BOTH_DEGRADED "both the primary and backup WAN are unusable (state=$state; primary score ${p_score:-?}, backup score ${b_score:-?}) -> total internet loss is likely."
+elif [ "$WAN_HEALTH_WRITE_FAIL_MAX" -gt 0 ] 2>/dev/null && ge "$write_failures" "$WAN_HEALTH_WRITE_FAIL_MAX"; then
+  smols_verdict FAIL WAN_SWITCH_FAILED "the supervisor tried to move traffic to $write_target and the firewall refused $write_failures times in a row ($write_error) -> internet is still on ${active:-?}; failover is not working."
+elif [ "$dry_run_flag" = true ] && [ "$intended_target" != "?" ] && [ "$intended_target" != "$active" ]; then
+  smols_verdict WARN WAN_SWITCH_HELD "the supervisor wants to move traffic to $intended_target but runs in dry-run, so nothing was switched (${reason:-no reason recorded}) -> internet is still on ${active:-?}."
 elif [ "$any_suppressed" = true ]; then
   smols_verdict WARN WAN_FLAP_SUPPRESSED "flap damping is active on: ${sup_names:-a WAN} -> it flapped recently and is being held down to avoid oscillation."
 elif [ "$active_exists" != 1 ]; then
@@ -132,6 +162,9 @@ elif [ "$degraded_flag" = true ]; then
   smols_verdict WARN WAN_DEGRADED "the supervisor could not read the firewall this cycle (sensing failure) -> flying blind, but status is not yet stale."
 elif [ "$active_healthy" != true ]; then
   smols_verdict WARN WAN_DEGRADED "active WAN ($active) is degraded: score ${a_score:-?} (needs >=80 and not suppressed)."
+elif [ "$active" = "$primary" ] && [ "$WAN_HEALTH_PRIMARY_BAD_CYCLES" -gt 0 ] 2>/dev/null \
+     && [ -n "$p_bad" ] && ge "$p_bad" "$WAN_HEALTH_PRIMARY_BAD_CYCLES"; then
+  smols_verdict WARN WAN_PRIMARY_UNSTABLE "the main line ($primary) is dropping packets: $p_bad of the supervisor's checks in the last 10 minutes scored below healthy (lowest score ${p_min:-?}) -> still on $primary, which looks fine right now."
 elif [ "$active" = "$backup" ]; then
   # Running on the backup WAN, healthy. Severity is configurable (WAN_HEALTH_BACKUP_SEVERITY):
   # OK   = steady-state non-event (default, public-safe); WARN = announce a sustained failover.
