@@ -34,7 +34,7 @@ SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
 
 : "${SMON_PROBES:=sys-diag disk-report log-triage runaway-hunter}"
 : "${SMON_BRAIN:=none}"                    # glm | local | none  (enrichment engine)
-: "${SMON_NOTIFY:=stdout}"                 # space-separated: ha-push kuma stdout
+: "${SMON_NOTIFY:=stdout}"                 # space-separated: ha-push ha-script http-api matrix kuma stdout
 : "${SMON_HA_URL:=}"
 : "${SMON_HA_TOKEN:=}"                      # or set SMON_HA_TOKEN_CMD to fetch it
 : "${SMON_HA_TOKEN_CMD:=}"
@@ -48,7 +48,10 @@ SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
 : "${SMON_FAIL_REMIND_SWEEPS:=0}"          # re-push a still-standing FAIL every N sweeps (0 = never remind)
 : "${SMON_DIGEST_HOUR:=}"                   # hour (0-23) to push a once-daily status digest (blank = off)
 : "${SMON_ENRICH_FAIL:=0}"                  # 1 = also enrich FAIL messages; 0 = ship FAIL raw (no model wait)
-: "${SMON_FALLBACK_NOTIFY:=}"              # backends to try ONLY when a primary ha-push fails (e.g. "stdout")
+: "${SMON_FALLBACK_NOTIFY:=}"              # backends to try ONLY when a primary backend fails (e.g. "ha-script")
+: "${SMON_NOTIFY_API_URL:=}"               # http-api backend: POST {message, source} JSON here
+: "${SMON_NOTIFY_API_KEY_FILE:=}"          # http-api: 0600 file with the X-API-Key value (bare, or NAME=value)
+: "${SMON_NOTIFY_API_SOURCE:=smon-$(hostname -s 2>/dev/null || echo host)}"  # http-api: source label (max 40 chars)
 : "${SMON_STATE_DIR:=$HOME/.local/state/smon}"
 : "${SMON_LOG:=$HOME/logs/smon.log}"
 : "${SMON_HOST:=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo host)}"
@@ -122,6 +125,7 @@ _notify_one(){
     ha-push)   notify_ha "$title" "$body" ;;   # returns non-zero on HTTP failure
     ha-script) notify_ha_script "$kind" "$probe" "$title" "$body" ;;  # severity-aware HA fan-out
     matrix)    notify_matrix "$title" "$body" ;;
+    http-api)  notify_api "$title" "$body" ;;   # returns non-zero unless delivered
     kuma)      return 0 ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
     *) log "unknown notify backend '$b'"; return 1 ;;
   esac
@@ -180,6 +184,53 @@ notify_matrix(){
     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
     --data "$(jq -n --arg body "$title"$'\n'"$body" '{msgtype:"m.text",body:$body}')" 2>/dev/null)
   if [ "$code" = 200 ]; then log "matrix ok: $title"; return 0; else log "matrix FAILED (HTTP $code): $title"; return 1; fi
+}
+
+# notify_api_payload <message> <source> -> {"message","source"} JSON on stdout, message cut to
+# 1000 characters and source to 40. Pure (jq only, no network) so it is unit-testable.
+notify_api_payload(){
+  jq -n --arg message "$1" --arg source "$2" \
+    '{message: ($message | .[0:1000]), source: ($source | .[0:40])}'
+}
+
+# notify_api_key <file> -> the X-API-Key value on stdout: first non-blank, non-comment line, with an
+# optional leading NAME= (dotenv style) and surrounding quotes removed. A bare key that itself
+# contains "=" (e.g. base64 padding) is kept whole. Pure (no network), so it is unit-testable.
+notify_api_key(){
+  local key
+  key="$(grep -v '^[[:space:]]*\(#\|$\)' "$1" | head -n 1 | sed -E 's/^[A-Za-z_][A-Za-z0-9_]*=([^=])/\1/')"
+  key="${key%\"}"; key="${key#\"}"; key="${key%\'}"; key="${key#\'}"
+  printf '%s' "$key"
+}
+
+# notify_api_delivered <http_code> <response_body> — 0 only on HTTP 200 with "delivered" or "deduped" true.
+notify_api_delivered(){
+  [ "$1" = 200 ] && printf '%s' "$2" | jq -e '.delivered == true or .deduped == true' >/dev/null 2>&1
+}
+
+# notify_api <title> <body> — POST {message, source} to SMON_NOTIFY_API_URL with an X-API-Key
+# header. The key comes from SMON_NOTIFY_API_KEY_FILE and reaches curl through a 0600 header file,
+# never argv. The message ends with a UTC timestamp (lost if the message is cut to 1000 characters). Returns 0 only on HTTP 200 with
+# "delivered" or "deduped" true, non-zero otherwise (so notify_send can fall back).
+notify_api(){
+  local title="$1" body="$2" key hdr out code resp logresp msg
+  [ -n "$SMON_NOTIFY_API_URL" ] && [ -r "$SMON_NOTIFY_API_KEY_FILE" ] || {
+    log "http-api skipped (missing SMON_NOTIFY_API_URL / readable SMON_NOTIFY_API_KEY_FILE)"; return 1; }
+  key="$(notify_api_key "$SMON_NOTIFY_API_KEY_FILE")"
+  [ -n "$key" ] || { log "http-api skipped (empty key file)"; return 1; }
+  hdr="$(mktemp)" || { log "http-api skipped (mktemp failed)"; return 1; }
+  printf 'X-API-Key: %s\n' "$key" > "$hdr"
+  msg="$title"$'\n'"$body"$'\n'"($(date -u '+%F %T UTC'))"
+  out="$(curl -s -m 20 -w '\n%{http_code}' -X POST "$SMON_NOTIFY_API_URL" \
+    -H @"$hdr" -H "Content-Type: application/json" \
+    --data "$(notify_api_payload "$msg" "$SMON_NOTIFY_API_SOURCE")" 2>/dev/null)"
+  rm -f "$hdr"
+  code="${out##*$'\n'}"; resp="${out%$'\n'*}"
+  logresp="$(printf '%s' "$resp" | tr -d '\n' | head -c 160)"
+  if notify_api_delivered "$code" "$resp"; then
+    log "http-api ok (HTTP 200 $logresp): $title"; return 0
+  fi
+  log "http-api FAILED (HTTP ${code:-none} $logresp): $title"; return 1
 }
 
 heartbeat(){
