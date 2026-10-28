@@ -25,6 +25,11 @@ ROUTER_API_PORT=443         # vendor REST/mgmt port (SonicWall is often 443 or 8
 SNMP_COMMUNITY=public       # SNMP v2c read community
 ROUTER_CRED_ITEM=           # password-manager item for router admin creds (ONLINE only), e.g. op-get item name
 # ROUTER_CRED_FILE=~/.config/small-model-skills/router.cred   # optional cached "user=.../pass=..." (chmod 600) for OFFLINE REST
+# ROUTER_CRED_CMD=                # optional command (run via bash -c) printing "user=<name>" and "pass=<secret>" lines, same
+#                                 # format as the file. Tried FIRST; on failure/empty/incomplete output falls back to the file,
+#                                 # then ROUTER_CRED_ITEM. Example with a generic secrets CLI (names are examples):
+#                                 # ROUTER_CRED_CMD='printf "user=%s\npass=%s\n" "$(my-secrets get ROUTER_ADMIN_USERNAME)" "$(my-secrets get ROUTER_ADMIN_PASSWORD)"'
+#                                 # (the secrets command must print the bare value)
 
 # --- Local model (Ollama; used by the `claude-local` launcher) ---
 LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any capable ~30B MoE coder works;
