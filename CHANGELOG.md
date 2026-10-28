@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`ROUTER_CRED_CMD` hook for the SonicWall router module** — when set, the command is run and the admin login
+  read from its `user=`/`pass=` output (same format as `ROUTER_CRED_FILE`); on failure, empty or incomplete output
+  it falls back to the file, then `ROUTER_CRED_ITEM`/`op-get`, as before. Documented in `config.example` with a
+  secrets-CLI example; covered by `test/router-cred-cmd-test.sh`.
 - **`smon` `http-api` notify backend** — POSTs `{message, source}` JSON to a generic notify API
   (`SMON_NOTIFY_API_URL`, `SMON_NOTIFY_API_KEY_FILE`, `SMON_NOTIFY_API_SOURCE`) with an `X-API-Key` header taken
   from a 0600 key file (never on argv). Delivered only on HTTP 200 with `delivered`/`deduped` true, otherwise it

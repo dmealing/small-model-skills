@@ -14,7 +14,7 @@ Create `modules/router/<vendor>.sh` defining one function:
 router_module_enrich(){
   # Called after the SNMP table + verdict are printed.
   # Read-only ONLY. Print a short, human-readable block. Helpers available: have, smols_sec, smols_line.
-  # Config available: ROUTER_HOST, ROUTER_API_PORT, SNMP_COMMUNITY, ROUTER_CRED_FILE, ROUTER_CRED_ITEM.
+  # Config available: ROUTER_HOST, ROUTER_API_PORT, SNMP_COMMUNITY, ROUTER_CRED_CMD, ROUTER_CRED_FILE, ROUTER_CRED_ITEM.
   # Degrade gracefully (missing creds/tools/endpoints must not error).
 }
 ```
@@ -22,4 +22,4 @@ router_module_enrich(){
 Then set `ROUTER_MODULE=<vendor>` in your config. See `sonicwall.sh` for a reference (SonicOS REST API).
 
 Rules: **GET/read-only only** — never commit config, reboot, or change state. Never hardcode secrets;
-pull them from `ROUTER_CRED_FILE` or a password manager. Keep output to a few lines.
+pull them from `ROUTER_CRED_CMD`, `ROUTER_CRED_FILE` or a password manager. Keep output to a few lines.
