@@ -10,6 +10,29 @@ smols_swap_used_kb(){ free 2>/dev/null | awk '/^Swap:/{print $3+0}'; }
 smols_top_procs_cpu(){ ps -eo pid,comm,%cpu,%mem --sort=-%cpu 2>/dev/null | tail -n +2 | head -"${1:-5}"; }
 smols_top_procs_mem(){ ps -eo pid,comm,%mem,%cpu --sort=-%mem 2>/dev/null | tail -n +2 | head -"${1:-5}"; }
 smols_top_cpu_pct(){ ps -eo %cpu --sort=-%cpu --no-headers 2>/dev/null | head -1; }
+# --- memory floor / expected-workload helpers (sys-diag) ---
+# smols_mem_avail_pct — RAM still available for new work, as an integer % of total. MemAvailable
+# already counts reclaimable page cache, so this is the honest "is RAM running out?" number.
+smols_mem_avail_pct(){ awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{if(t>0) printf "%d\n", a*100/t}' /proc/meminfo 2>/dev/null; }
+# smols_swap_free_pct — free swap as an integer % of swap total. Empty when the host has no swap.
+smols_swap_free_pct(){ awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{if(t>0) printf "%d\n", f*100/t}' /proc/meminfo 2>/dev/null; }
+# smols_oom_kills_recent <minutes> — count of processes killed for lack of memory in the last N minutes,
+# by the kernel OOM killer or systemd-oomd. Empty when the journal can't be read (unknown, not zero).
+smols_oom_kills_recent(){
+  have journalctl || return 0
+  local j
+  # stdout and stderr both: the "not seeing messages from other users" hint may land on either stream.
+  j="$(journalctl --no-pager -S "-${1:-30}min" 2>&1)" || return 0
+  # A user outside adm/systemd-journal gets a partial journal and exit 0: that is unknown, not zero.
+  printf '%s\n' "$j" | grep -qi 'not seeing messages from other users' && return 0
+  printf '%s\n' "$j" | grep -ciE 'out of memory: kill|systemd-oomd.*Killed '
+}
+# smols_procs_snapshot — every process as "pid ppid pcpu pmem comm" (comm last; it may contain spaces).
+smols_procs_snapshot(){ ps -eo pid=,ppid=,pcpu=,pmem=,comm= 2>/dev/null; }
+# smols_proc_cwd <pid> — the process's working directory ("<dir> (deleted)" if it was removed). Empty if unreadable.
+smols_proc_cwd(){ readlink "/proc/$1/cwd" 2>/dev/null; }
+# smols_proc_args <pid> — the full command line, NUL separators turned into spaces.
+smols_proc_args(){ { tr '\0' ' ' < "/proc/$1/cmdline"; } 2>/dev/null; }
 
 smols_local_links(){ ip -br link 2>/dev/null | awk '$1!="lo"{print $1, $2}'; }
 smols_host_addr(){ ip -4 -br addr 2>/dev/null | awk '$1!="lo" && $3!=""{print $1, $3; exit}'; }

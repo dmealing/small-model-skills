@@ -60,13 +60,40 @@ FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetc
 # DISK_CRIT_PCT=95      # disk-report FAIL (DISK_CRITICAL) at/above this %
 # LOAD_WARN_FACTOR=1.5  # sys-diag WARN (HIGH_LOAD) when 1-min load > cores * this factor
 # CPU_HOG_PCT=90        # sys-diag WARN (CPU_HOG) when a single process uses >= this %core
-# SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB
+# SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB AND available RAM is
+#                       #   <= SWAP_FLOOR_RAM_PCT (swap in use with ample RAM is not an alert)
 # TEMP_WARN_C=85        # sys-diag WARN (THERMAL) when the hottest CPU/GPU sensor is >= this °C
+# MEM_AVAIL_FLOOR_PCT=5      # sys-diag WARN (MEMORY_PRESSURE) when available RAM is <= this % of total (never excused)
+# SWAP_FREE_FLOOR_PCT=10     # ...or when free swap is <= this % of swap total AND available RAM is <= SWAP_FLOOR_RAM_PCT
+#                            # (skipped on a host with no swap; nearly full swap with ample RAM is not an alert)
+# SWAP_FLOOR_RAM_PCT=20      # available-RAM mark (% of total) that must also be breached for the swap floor
+# OOM_WINDOW_MIN=30          # sys-diag WARN (OOM_KILL) when the kernel OOM killer or systemd-oomd killed anything in
+#                            #   this many minutes (never excused). Keep it longer than SMON_WARN_SUSTAIN sweeps.
+#
+# Expected heavy work (sys-diag; OFF while WORKLOAD_ROOTS and WORKLOAD_REGEX are both blank). On a build or CI host,
+# heavy load from the work it is MEANT to run is not a fault. A CPU- or memory-heavy process is "expected" when it
+# (or any ancestor) has its working directory under a WORKLOAD_ROOTS directory, or a command line matching
+# WORKLOAD_REGEX. When every heavy process is expected, HIGH_LOAD / CPU_HOG / swap-in-use MEMORY_PRESSURE stay
+# quiet; the memory floor and OOM_KILL above still fire, and an expected process with no live owner is reported
+# as WARN ORPHANED_WORK. Example values only; set your own:
+# WORKLOAD_ROOTS="/srv/build /var/lib/ci-runner/_work"   # space-separated directories (no spaces inside a path)
+# WORKLOAD_REGEX='Runner\.Worker|pytest|vitest|gradle'  # extended regex over each process's command line
+# WORKLOAD_OWNER_REGEX=      # an expected process with no ancestor matching this is ORPHANED_WORK. Blank = orphaned
+#                            #   means re-parented to init/a systemd manager, or its working directory was deleted.
+# WORKLOAD_DAEMON_REGEX=     # build servers that detach on purpose and stay warm (compiler/build daemons): expected work,
+#                            #   and NOT orphaned merely for being re-parented, e.g. 'KotlinCompileDaemon|MSBuild\.dll'
+# WORKLOAD_CPU_PCT=50        # a process at/above this %core counts as CPU-heavy
+# WORKLOAD_MEM_PCT=5         # a process at/above this % of RAM counts as memory-heavy
 # SMART_NVME_WEAR_WARN=80    # smart-health WARN (DRIVE_AGING) when NVMe 'Percentage Used' >= this %
 # SMART_NVME_WEAR_CRIT=95    # smart-health FAIL (DRIVE_FAILING) when NVMe 'Percentage Used' >= this %
 # SMART_SPARE_WARN=20        # smart-health WARN (DRIVE_AGING) when NVMe 'Available Spare' <= this %
 # SMART_TEMP_WARN=70         # smart-health WARN (DRIVE_AGING) when any drive temp >= this °C
 # SMART_DEVICES=             # smart-health device list (blank = auto-detect physical disks via lsblk)
+# SMART_DISTRUST_SENSORS=    # smart-health: NVMe temperature sensors known to be stuck, space-separated "<device>:<n>"
+#                            #   (e.g. "nvme1n1:1" = "Temperature Sensor 1"). For that drive the temperature is judged on
+#                            #   its other sensors, and health FAILED / critical warning 0x02 are set aside ONLY while 0x02
+#                            #   is the sole critical bit, the composite is no hotter than the stuck sensor, and every other
+#                            #   sensor is below SMART_TEMP_WARN. Media errors, wear, spare and other critical bits still count.
 # WAN_HEALTH_STATUS=         # wan-health: path to the wan-link-supervisor's status.json (blank = ${XDG_STATE_HOME:-$HOME/.local/state}/wanlink/status.json; the private supervisor writes it)
 # WAN_HEALTH_MAX_AGE_S=30    # wan-health FAIL (WAN_PROBE_FAILED) when status.json ts is older than this (s); ~2x the supervisor's ~15s cycle (raw age is compared, so 30.4s still trips)
 # WAN_HEALTH_WRITE_FAIL_MAX=3       # wan-health FAIL (WAN_SWITCH_FAILED) after this many failed rank writes in a row (0 = off)

@@ -26,8 +26,10 @@ SMON_HA_TOKEN_CMD=           # e.g. cat ~/.config/smon/ha.token   (or an op-get 
 
 # --- JSON notify API (when SMON_NOTIFY includes http-api) ---
 # POSTs {"message": "<title>\n<body>\n(<UTC time>)", "source": "<label>"} with an X-API-Key header.
-# Counts as delivered only on HTTP 200 with "delivered" or "deduped" true; anything else falls back.
+# A 2xx answer counts as delivered (delivered/deduped/held true) or accepted (any other 2xx); only no answer
+# (timeout, unreachable) or a non-2xx code falls back to SMON_FALLBACK_NOTIFY.
 SMON_NOTIFY_API_URL=         # e.g. https://notify.example.com/api/notify
+SMON_NOTIFY_API_KEY_ENV=     # NAME of an env var holding the key (tried first; e.g. set by your secrets tool's run wrapper)
 SMON_NOTIFY_API_KEY_FILE=    # 0600 file holding the key (bare value, or NAME=value as a dotenv line)
 SMON_NOTIFY_API_SOURCE=      # source label, max 40 chars (default smon-<hostname>)
 
@@ -49,6 +51,11 @@ SMON_QUIET_START=23          # defer WARN push from this hour ...
 SMON_QUIET_END=7             # ... until this hour (FAIL and recovery always push, bypassing quiet hours)
 SMON_PROBE_TIMEOUT=120       # seconds; defense against hung probes holding flock and causing monitoring blackout
 SMON_FAIL_REMIND_SWEEPS=0    # re-push a still-standing FAIL every N sweeps (0 = never; e.g. 36 ≈ every 6h at */10)
+SMON_FLAP_SUPPRESS=0         # 1 = once a probe's WARN class has been pushed, don't re-push it until the probe is OK again
+                             #     (stops alternating WARN/A <-> WARN/B re-alerting). A new class, any FAIL, and the one
+                             #     recovery when the probe clears still push. 0 = every WARN tag change re-pushes (default).
+SMON_TAG_CLASSES=            # with SMON_FLAP_SUPPRESS=1: space-separated groups of comma-joined TAGs that count as ONE
+                             #     problem class, e.g. "HIGH_LOAD,CPU_HOG" (blank = every TAG is its own class)
 SMON_ENRICH_FAIL=0           # 1 = enrich FAIL messages with the model too; 0 = ship FAIL raw (no model wait — faster critical alerts)
 SMON_DIGEST_HOUR=            # hour 0-23 to push a once-daily all-probe status digest (blank = off; the "daily all-clear")
 

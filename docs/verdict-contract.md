@@ -89,7 +89,7 @@ The verdict `STATUS` is independent of the process exit code:
 ## 6. Worked example
 
 `sys-diag` (system load/memory/thermal probe) emits tags including `CPU_HOG`, `HIGH_LOAD`,
-`MEMORY_PRESSURE`, `THERMAL`, `NOMINAL`, and `PROBE_FAILED`. A concrete sample line:
+`MEMORY_PRESSURE`, `OOM_KILL`, `ORPHANED_WORK`, `THERMAL`, `NOMINAL`, and `PROBE_FAILED`. A concrete sample line:
 
 ```
 verdict: WARN CPU_HOG — one process is using ~104% of a core (see top CPU processes).
