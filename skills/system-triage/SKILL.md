@@ -16,7 +16,7 @@ Find what is making this workstation slow. Read-only.
 1. Run `sys-diag`. Read the `verdict` line and the top-CPU and top-memory tables.
 2. Interpret the verdict:
    - HIGH LOAD or CPU HOG → one or more processes are saturating the CPU (see the top-CPU table).
-   - MEMORY PRESSURE → RAM or swap is nearly gone, or heavy swap is in use (see the top-memory table).
+   - MEMORY PRESSURE → RAM or swap is nearly gone, or heavy swap is in use while RAM is also low (see the top-memory table).
    - OOM KILL → the system already killed a process for lack of memory; name the top-memory process.
    - ORPHANED WORK → a heavy build/test process is still running after whatever started it is gone (PID in the verdict).
    - Nominal but still slow → suspect disk I/O; if `iostat` is available (the sysstat package) propose
