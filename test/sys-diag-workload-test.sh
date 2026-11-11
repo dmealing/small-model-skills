@@ -35,7 +35,7 @@ reset_procs(){
   rm -f "$FIX"/*
   proc 1 0 0.0 0.1 systemd / "/sbin/init"
   proc 900 1 0.0 0.1 systemd / "/lib/systemd/systemd --user"
-  proc 1000 900 0.1 0.1 bash /home/u "bash"
+  proc 1000 900 0.1 0.1 bash /srv/u "bash"
   proc 2000 1000 0.5 0.5 agent /work/a "agent-cli run"
 }
 # A fleet of builds/tests under the work root /work, each owned by the agent (pid 2000).
@@ -64,7 +64,7 @@ reset_procs
 proc 2104 2000 20 14.0 java /work/e "java -Xmx16g IntegrationTests"   # memory-heavy, CPU-light
 check "heavy swap without workload config: MEMORY_PRESSURE as before" "WARN MEMORY_PRESSURE — heavy swap" "$(FAKE_SWAPUSED_KB=25000000 run)"
 check "heavy swap from expected work: no MEMORY_PRESSURE" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work FAKE_SWAPUSED_KB=25000000 run)"
-proc 2105 1000 1 12.0 browser /home/u "browser"
+proc 2105 1000 1 12.0 browser /srv/u "browser"
 check "heavy swap with an unexpected memory hog: MEMORY_PRESSURE" "WARN MEMORY_PRESSURE" "$(WORKLOAD_ROOTS=/work FAKE_SWAPUSED_KB=25000000 run)"
 
 echo "=== expected work is inherited from an ancestor ==="
@@ -74,7 +74,7 @@ check "child of expected work is expected" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work 
 
 echo "=== an unexpected hog alongside expected work still alerts ==="
 fleet
-proc 3000 1000 99 0.5 miner /home/u "miner --all-cores"
+proc 3000 1000 99 0.5 miner /srv/u "miner --all-cores"
 check "unexpected heavy process: load not excused" "WARN HIGH_LOAD" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 run)"
 check "unexpected hog at normal load: CPU_HOG" "WARN CPU_HOG — one process is using ~99%" "$(WORKLOAD_ROOTS=/work run)"
 
@@ -106,7 +106,7 @@ fleet
 check "owner regex matches a live ancestor: no orphan" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work WORKLOAD_OWNER_REGEX='agent-cli' FAKE_LOAD=94 run)"
 check "owner regex matches no ancestor: ORPHANED_WORK" "WARN ORPHANED_WORK" "$(WORKLOAD_ROOTS=/work WORKLOAD_OWNER_REGEX='some-other-owner' FAKE_LOAD=94 run)"
 fleet
-proc 2400 900 150 4.0 java /home/u/.cache/kotlin/daemon "java -cp x.jar org.example.KotlinCompileDaemon"
+proc 2400 900 150 4.0 java /srv/u/.cache/kotlin/daemon "java -cp x.jar org.example.KotlinCompileDaemon"
 check "detached build daemon matching WORKLOAD_DAEMON_REGEX: expected, not orphaned" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work WORKLOAD_DAEMON_REGEX='CompileDaemon' FAKE_LOAD=94 run)"
 check "same daemon unconfigured: an unexpected heavy process" "WARN HIGH_LOAD" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 run)"
 proc 2401 900 120 1.0 node "/work/gone (deleted)" "node CompileDaemon"
