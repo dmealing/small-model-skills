@@ -199,6 +199,64 @@ rm -f "$STATE"/*.state
 set_verdict "OK lowercasetag — x"; out="$(run)"
 check "  bad-grammar tag -> BAD_VERDICT alert" "BAD_VERDICT" "$out"
 
+echo "=== 25. flip-flop OFF by default: alternating WARN tags re-push each class change ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; run >/dev/null
+all=""
+for t in CPU_HOG CPU_HOG MEMORY_PRESSURE MEMORY_PRESSURE CPU_HOG CPU_HOG MEMORY_PRESSURE MEMORY_PRESSURE; do
+  set_verdict "WARN $t — load"; all="$all$(run)"$'\n'
+done
+check "  default: 4 pushes for 4 matured flips" "^4$" "$(printf '%s\n' "$all" | grep -c '^\[smon WARN\]')"
+
+echo "=== 26. flip-flop ON: alternating two WARN tags pushes each class once, never again ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; SMON_FLAP_SUPPRESS=1 run >/dev/null
+all=""
+for t in CPU_HOG CPU_HOG MEMORY_PRESSURE MEMORY_PRESSURE CPU_HOG CPU_HOG MEMORY_PRESSURE MEMORY_PRESSURE CPU_HOG CPU_HOG; do
+  set_verdict "WARN $t — load"; all="$all$(SMON_FLAP_SUPPRESS=1 run)"$'\n'
+done
+check "  flap on: one push per class (2), not one per flip" "^2$" "$(printf '%s\n' "$all" | grep -c '^\[smon WARN\]')"
+check "  suppression is logged" "FLAP-SUPPRESSED" "$(cat "$TMP/smon.log")"
+set_verdict "OK NOMINAL — calm"; out="$(SMON_FLAP_SUPPRESS=1 run)"
+check "  one recovery when the episode clears" "^1$" "$(printf '%s\n' "$out" | grep -c 'recovered')"
+out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  OK again: silent" EMPTY "$out"
+
+echo "=== 27. flip-flop ON + SMON_TAG_CLASSES grouping: alternating CPU/memory = ONE alert ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; SMON_FLAP_SUPPRESS=1 run >/dev/null
+all=""
+for t in CPU_HOG CPU_HOG MEMORY_PRESSURE MEMORY_PRESSURE CPU_HOG CPU_HOG MEMORY_PRESSURE MEMORY_PRESSURE; do
+  set_verdict "WARN $t — load"; all="$all$(SMON_FLAP_SUPPRESS=1 SMON_TAG_CLASSES="CPU_HOG,MEMORY_PRESSURE" run)"$'\n'
+done
+check "  grouped: exactly one push" "^1$" "$(printf '%s\n' "$all" | grep -c '^\[smon WARN\]')"
+
+echo "=== 28. flip-flop ON: a NEW class still alerts; WARN -> FAIL alerts at once ==="
+set_verdict "WARN THERMAL — hot"; SMON_FLAP_SUPPRESS=1 run >/dev/null
+out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  new class (THERMAL) pushes after sustain" "THERMAL" "$out"
+set_verdict "FAIL OOM_STORM — dying"; out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  WARN -> FAIL pushes immediately" "OOM_STORM" "$out"
+set_verdict "OK NOMINAL — fine"; out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  recovery after FAIL" "recovered" "$out"
+
+echo "=== 29. flip-flop ON: a pending new class that clears still closes the episode with one recovery ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; SMON_FLAP_SUPPRESS=1 run >/dev/null
+set_verdict "WARN CPU_HOG — x"; SMON_FLAP_SUPPRESS=1 run >/dev/null; SMON_FLAP_SUPPRESS=1 run >/dev/null
+set_verdict "WARN THERMAL — y"; out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  new class maturing: silent" EMPTY "$out"
+set_verdict "OK NOMINAL — z"; out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  recovery still sent" "recovered" "$out"
+
+echo "=== 30. an orphaned-work WARN that persists alerts once ==="
+rm -f "$STATE"/*.state
+set_verdict "OK NOMINAL — start"; run >/dev/null
+all=""
+for i in 1 2 3 4 5 6; do set_verdict "WARN ORPHANED_WORK — pid $i (java) has no live owner"; all="$all$(run)"$'\n'; done
+check "  orphan alert pushed exactly once" "^1$" "$(printf '%s\n' "$all" | grep -c 'ORPHANED_WORK')"
+
+echo "=== 31. old 5-field state file is read as having nothing reported ==="
+rm -f "$STATE"/*.state
+echo "WARN CPU_HOG 1 1 1" > "$STATE/zz-faketest.state"
+set_verdict "WARN MEMORY_PRESSURE — m"; SMON_FLAP_SUPPRESS=1 run >/dev/null
+out="$(SMON_FLAP_SUPPRESS=1 run)"; check "  legacy state: new class pushes" "MEMORY_PRESSURE" "$out"
+check "  state now carries the reported field" "MEMORY_PRESSURE$" "$(cat "$STATE/zz-faketest.state")"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

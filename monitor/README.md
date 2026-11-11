@@ -15,6 +15,8 @@ cron (e.g. every 10 min) → smon:
                      FAIL ships raw prose by default (no model wait) unless SMON_ENRICH_FAIL=1
                      re-pushes every SMON_FAIL_REMIND_SWEEPS if still standing (optional)
   → WARN (sustained): push only after it persists SMON_WARN_SUSTAIN sweeps (rides out blips)
+                     with SMON_FLAP_SUPPRESS=1, a WARN class already pushed since the probe was last OK
+                     is not re-pushed (no alerts for flapping between two known warnings)
   → recovery:        push a "resolved" note (bypasses quiet hours)
   unchanged:         silent
   end of sweep:      heartbeat (so a dead/frozen host is detectable Kuma-side)
@@ -70,7 +72,9 @@ See `monitor.conf.example` for every key. The important ones:
   primary backends fail — e.g. `matrix` for HA-down scenarios)
 - **Alert policy**: `SMON_WARN_SUSTAIN`, `SMON_QUIET_START`/`END` (FAIL and recovery bypass
   quiet hours), `SMON_FAIL_REMIND_SWEEPS` (re-push standing FAIL every N sweeps; 0=never),
-  `SMON_ENRICH_FAIL` (1=enrich FAIL with model; 0=ship raw for faster critical alerts)
+  `SMON_ENRICH_FAIL` (1=enrich FAIL with model; 0=ship raw for faster critical alerts),
+  `SMON_FLAP_SUPPRESS` / `SMON_TAG_CLASSES` (don't re-push a WARN class already pushed in the current not-OK
+  episode; one recovery closes the episode)
 - **Daily digest**: `SMON_DIGEST_HOUR` (hour 0-23 to push once-daily all-probe status; blank=off)
 - **Enrichment**: `SMON_BRAIN` (`glm|local|none`)
 
@@ -79,11 +83,14 @@ Backends: `ha-push` (Home Assistant mobile push), `kuma` (Uptime Kuma heartbeat)
 `SMON_MATRIX_ROOM` (!room:server), `SMON_MATRIX_TOKEN_CMD` (prints access token).
 
 `http-api` POSTs `{"message": "<title>\n<body>\n(<UTC time>)", "source": "<label>"}` as JSON to
-`SMON_NOTIFY_API_URL` with an `X-API-Key` header read from `SMON_NOTIFY_API_KEY_FILE` (a 0600 file holding
-the bare key or a `NAME=value` line; blank and `#` lines are skipped, surrounding quotes removed; it reaches curl via a temporary header file, never argv).
+`SMON_NOTIFY_API_URL` with an `X-API-Key` header. The key is taken from the environment variable NAMED by
+`SMON_NOTIFY_API_KEY_ENV` (e.g. run smon under your secrets tool so that variable is set), else from
+`SMON_NOTIFY_API_KEY_FILE` (a 0600 file holding the bare key or a `NAME=value` line; blank and `#` lines are
+skipped, surrounding quotes removed). Either way it reaches curl via a temporary header file, never argv, and is never logged.
 `SMON_NOTIFY_API_SOURCE` sets the label (default `smon-<hostname>`, max 40 chars; the message is cut to 1000).
-It counts as delivered only on HTTP 200 with `delivered` or `deduped` true; anything else returns non-zero so
-`SMON_FALLBACK_NOTIFY` backends are tried.
+A 2xx answer with `delivered`, `deduped` or `held` true is logged as delivered; any other 2xx as accepted.
+Only no answer (timeout, unreachable) or a non-2xx code returns non-zero, so `SMON_FALLBACK_NOTIFY` backends
+(e.g. `ha-push`) are tried only then, never on top of a successful API call.
 
 Probe thresholds themselves (`DISK_WARN_PCT`, `TEMP_WARN_C`, …) live in the probes' own config
 (`~/.config/small-model-skills/config`); smon does not re-implement them.

@@ -17,8 +17,8 @@ Report the SMART health of this machine's disks. Read-only.
 ## Runbook
 1. Run `smart-health`. Read the `verdict` line and the per-drive table.
 2. Interpret the verdict:
-   - `DRIVE_FAILING` (FAIL) → a drive reports FAILED health, an NVMe critical warning, pending sectors, or
-     very high wear. This means imminent data loss — the reasons list names the drive(s).
+   - `DRIVE_FAILING` (FAIL) → a drive reports FAILED health, an NVMe critical warning, media errors, pending
+     sectors, or very high wear. This means imminent data loss — the reasons list names the drive(s).
    - `DRIVE_AGING` (WARN) → a drive has high (but not critical) wear, a few reallocated sectors, low spare,
      or an elevated temperature. Not urgent, but end-of-life is approaching for the named drive.
    - `NOMINAL` (OK) → all drives healthy.

@@ -3,6 +3,7 @@
 # Changes nothing. Exit: 0 diagnosis ran (even if it found a problem), 1 tool itself failed.
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+. "$BIN_DIR/lib/workload.sh"
 
 ncpu=$(smols_nproc)
 load1=$(smols_loadavg)
@@ -48,16 +49,60 @@ if have nvidia-smi; then
   [ -n "$gtemp" ] && { [ -z "$tmax" ] || [ "$gtemp" -gt "$tmax" ] 2>/dev/null; } && tmax="$gtemp"
 fi
 
+# Expected heavy work (WORKLOAD_ROOTS / WORKLOAD_REGEX; off when both are blank). Each heavy process is
+# classed expected | orphan | other; see bin/lib/workload.sh.
+work="$(smols_work_classify)"
+if smols_work_enabled; then
+  smols_sec "heavy processes vs expected workload"
+  printf '%s' "$work" | smols_toon heavy pid,comm,cpu,mem,class
+fi
+# _work_rows <cpu|mem> <class-regex> — heavy rows of the given kind whose class matches.
+_work_rows(){ printf '%s\n' "$work" | awk -F, -v k="$1" -v r="^($2)$" -v c="$WORKLOAD_CPU_PCT" -v m="$WORKLOAD_MEM_PCT" \
+  'NF>=5 && $5 ~ r && ((k=="cpu" && $3+0>=c) || (k=="mem" && $4+0>=m))'; }
+# A load signal (HIGH_LOAD, or swap-in-use MEMORY_PRESSURE) is EXCUSED when expected work is configured, some
+# heavy expected work is running, and no heavy process of that kind is anything else. Orphans never excuse:
+# they are reported on their own below. The memory floor and OOM_KILL are never excused.
+load_excused=0; swap_excused=0
+if smols_work_enabled; then
+  if printf '%s\n' "$work" | awk -F, '$5=="expected"{f=1} END{exit !f}'; then
+    [ -z "$(_work_rows cpu 'orphan|other')" ] && load_excused=1
+    [ -z "$(_work_rows mem 'orphan|other')" ] && swap_excused=1
+  fi
+  # CPU_HOG judges only processes that are NOT expected work.
+  hi="$(printf '%s\n' "$work" | awk -F, 'NF>=5 && $5!="expected"{v=int($3); if(v>m)m=v} END{print m+0}')"
+else
+  hi=$(smols_top_cpu_pct | awk '{print $1}' | cut -d. -f1)
+fi
+orphan="$(printf '%s\n' "$work" | awk -F, '$5=="orphan"' | sort -t, -k3,3nr | head -1)"
+
 smols_sec "verdict"
-hi=$(smols_top_cpu_pct | awk '{print $1}' | cut -d. -f1)
 swapused=$(smols_swap_used_kb)
-if [ -n "$load1" ] && awk -v l="$load1" -v c="$ncpu" -v f="$LOAD_WARN_FACTOR" 'BEGIN{exit !(l > c*f)}'; then
+availpct=$(smols_mem_avail_pct)
+swapfreepct=$(smols_swap_free_pct)
+ooms=$(smols_oom_kills_recent "$OOM_WINDOW_MIN")
+mem_low=""
+[ -n "$availpct" ] && [ "$availpct" -le "$MEM_AVAIL_FLOOR_PCT" ] 2>/dev/null && mem_low="only ${availpct}% of RAM available (floor ${MEM_AVAIL_FLOOR_PCT}%)"
+if [ -n "$swapfreepct" ] && [ "$swapfreepct" -le "$SWAP_FREE_FLOOR_PCT" ] 2>/dev/null; then
+  mem_low="${mem_low:+$mem_low, }only ${swapfreepct}% of swap free (floor ${SWAP_FREE_FLOOR_PCT}%)"
+fi
+# Order matters: a real memory shortage outranks load, so expected work can never mask it.
+if [ "${ooms:-0}" -gt 0 ] 2>/dev/null; then
+  smols_verdict WARN OOM_KILL "${ooms} process(es) were killed for lack of memory in the last ${OOM_WINDOW_MIN} min -> memory ran out (see top memory processes)."
+  smols_help "Check 'journalctl -k | grep -i \"out of memory\"' for what was killed; reduce concurrent workloads or add RAM/swap"
+elif [ -n "$mem_low" ]; then
+  smols_verdict WARN MEMORY_PRESSURE "${mem_low} -> memory is running out (see top memory processes)."
+  smols_help "Close or restart the top memory process above, or reduce concurrent workloads before the OOM killer acts"
+elif [ -n "$orphan" ]; then
+  IFS=, read -r o_pid o_comm o_cpu o_mem _ <<<"$orphan"
+  smols_verdict WARN ORPHANED_WORK "pid ${o_pid} (${o_comm}) is using ${o_cpu}% CPU / ${o_mem}% RAM as expected work but has no live owner -> likely left behind by a finished or killed run."
+  smols_help "Confirm with 'ps -o pid,ppid,etime,args -p ${o_pid}'; if nothing still needs it, stop it"
+elif [ "$load_excused" = 0 ] && [ -n "$load1" ] && awk -v l="$load1" -v c="$ncpu" -v f="$LOAD_WARN_FACTOR" 'BEGIN{exit !(l > c*f)}'; then
   smols_verdict WARN HIGH_LOAD "1-min load ($load1) well above core count ($ncpu) -> something is saturating the CPU (see top CPU processes)."
   smols_help "Inspect the top CPU process above; stop it if it's safe to, or let it finish if expected"
 elif [ "${hi:-0}" -ge "$CPU_HOG_PCT" ] 2>/dev/null; then
   smols_verdict WARN CPU_HOG "one process is using ~${hi}% of a core (see top CPU processes)."
   smols_help "Inspect the top CPU process above; if it's stuck/runaway, stop and restart it"
-elif [ "${swapused:-0}" -gt "$SWAP_WARN_KB" ] 2>/dev/null; then
+elif [ "$swap_excused" = 0 ] && [ "${swapused:-0}" -gt "$SWAP_WARN_KB" ] 2>/dev/null; then
   smols_verdict WARN MEMORY_PRESSURE "heavy swap in use -> RAM may be exhausted (see top memory processes)."
   smols_help "Close or restart the top memory process above, or add RAM/reduce concurrent workloads"
 elif [ -n "$tmax" ] && [ "${tmax:-0}" -ge "$TEMP_WARN_C" ] 2>/dev/null; then
@@ -65,7 +110,8 @@ elif [ -n "$tmax" ] && [ "${tmax:-0}" -ge "$TEMP_WARN_C" ] 2>/dev/null; then
   smols_help "Confirm fans are spinning and vents are clear; correlate with the top CPU/GPU processes above"
 else
   if have iostat; then io="Run 'iostat -x 2' for disk I/O detail"; else io="Install sysstat for iostat, or profile one app, to check disk I/O"; fi
-  smols_verdict OK NOMINAL "load, memory, per-process, and thermal all look normal. If it still feels slow, suspect disk I/O."
+  excused=""; { [ "$load_excused" = 1 ] || [ "$swap_excused" = 1 ]; } && excused=" Heavy load present is all expected work (see heavy processes)."
+  smols_verdict OK NOMINAL "load, memory, per-process, and thermal all look normal. If it still feels slow, suspect disk I/O.${excused}"
   smols_help "$io"
 fi
 exit 0

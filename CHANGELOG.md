@@ -7,6 +7,45 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`sys-diag` expected-workload rule** (off by default) — on a build/CI host, heavy load from the work it is meant
+  to run is no longer an alert. New keys `WORKLOAD_ROOTS` (directories) and `WORKLOAD_REGEX` (command-line regex)
+  mark a CPU- or memory-heavy process as expected when it, or any ancestor, runs under a root or matches; when
+  every heavy process is expected, `HIGH_LOAD`, `CPU_HOG` and swap-in-use `MEMORY_PRESSURE` stay quiet (`CPU_HOG`
+  still fires for a hog that is not expected work). `WORKLOAD_CPU_PCT` (50) and `WORKLOAD_MEM_PCT` (5) set what
+  counts as heavy. Logic in the new `bin/lib/workload.sh`; the probe prints a `heavy[...]{pid,comm,cpu,mem,class}`
+  table when the rule is on.
+- **`sys-diag` `ORPHANED_WORK` (WARN)** — an expected heavy process with no live owner: its working directory was
+  deleted, or no ancestor matches `WORKLOAD_OWNER_REGEX`, or (when that is blank) it was re-parented to init or a
+  systemd manager. Only checked while the expected-workload rule is on.
+- **`sys-diag` memory floor and `OOM_KILL` (WARN)**, never excused by expected work and checked before any load
+  rule: `MEMORY_PRESSURE` when available RAM is at/below `MEM_AVAIL_FLOOR_PCT` (5) or free swap at/below
+  `SWAP_FREE_FLOOR_PCT` (10; skipped with no swap), and `OOM_KILL` when the kernel OOM killer or systemd-oomd
+  killed a process in the last `OOM_WINDOW_MIN` (30) minutes (Linux journal; unknown on macOS). New backend
+  helpers `smols_mem_avail_pct`, `smols_swap_free_pct`, `smols_oom_kills_recent`, `smols_procs_snapshot`,
+  `smols_proc_cwd`, `smols_proc_args` on Linux and macOS.
+- **`smart-health` `SMART_DISTRUST_SENSORS`** (blank by default) — names stuck NVMe temperature sensors as
+  `<device>:<n>`. A stuck sensor makes the controller report health FAILED with critical warning 0x02 on a healthy
+  drive; for a listed drive the probe now judges temperature on the other sensors and sets FAILED / 0x02 aside only
+  while 0x02 is the sole critical bit, the composite is no hotter than the stuck sensor, and every other sensor is
+  below `SMART_TEMP_WARN`. The drive row shows `PASSED*` and a `note:` line explains the override.
+- **`smart-health` media errors** — `Media and Data Integrity Errors` above 0 is now `FAIL DRIVE_FAILING`
+  (previously not read at all), with or without a distrusted sensor.
+- **`smon` flip-flop suppression** (off by default) — `SMON_FLAP_SUPPRESS=1` stops re-pushing a WARN class already
+  pushed since the probe was last OK, so a probe alternating between two known warnings alerts once per class
+  instead of once per flip; a new class, any FAIL (WARN to FAIL pushes at once) and one recovery when the probe
+  clears still push. `SMON_TAG_CLASSES` groups TAGs into one class (e.g. `HIGH_LOAD,CPU_HOG`). The per-probe state
+  file gains a sixth field (classes reported this episode); five-field files from older versions read as "none".
+  Alert titles and the verdict line format are unchanged.
+- **`smon` `http-api`: key from an env var, `held` counts as delivered, fallback only on transport errors** —
+  `SMON_NOTIFY_API_KEY_ENV` names an environment variable holding the key (tried before
+  `SMON_NOTIFY_API_KEY_FILE`; never logged). A 2xx answer with `held: true` is now delivered like
+  `delivered`/`deduped`. **Behaviour change:** any other 2xx (e.g. `delivered: false`) no longer triggers
+  `SMON_FALLBACK_NOTIFY`; fallback now runs only when the API is unreachable, times out, or answers non-2xx, so a
+  successful API call is never doubled by the fallback. `notify_api_delivered` became `notify_api_outcome`
+  (delivered | accepted | error). End-to-end coverage in `monitor/test/smon-http-api-test.sh` (fake `curl`).
+- Tests: `test/sys-diag-workload-test.sh` (fake OS backend: fleet load, memory floor, OOM, orphans),
+  `test/smart-health-sensor-test.sh` (fake `smartctl`: stuck sensor, media errors, other critical bits), and
+  flip-flop cases 25-31 in `monitor/test/smon-test.sh`.
 - **`ROUTER_CRED_CMD` hook for the SonicWall router module** — when set, the command is run and the admin login
   read from its `user=`/`pass=` output (same format as `ROUTER_CRED_FILE`); on failure, empty or incomplete output
   it falls back to the file, then `ROUTER_CRED_ITEM`/`op-get`, as before. Documented in `config.example` with a

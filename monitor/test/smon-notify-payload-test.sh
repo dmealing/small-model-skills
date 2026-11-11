@@ -7,7 +7,7 @@ SMON="$REPO/monitor/bin/smon"
 eval "$(sed -n '/^ha_script_payload()/,/^}/p' "$SMON")"
 eval "$(sed -n '/^notify_api_payload()/,/^}/p' "$SMON")"
 eval "$(sed -n '/^notify_api_key()/,/^}/p' "$SMON")"
-eval "$(sed -n '/^notify_api_delivered()/,/^}/p' "$SMON")"
+eval "$(sed -n '/^notify_api_outcome()/,/^}/p' "$SMON")"
 
 fail=0
 check(){ local d="$1" got="$2" exp="$3"; if [ "$got" = "$exp" ]; then echo "  ✓ $d"; else echo "  ✗ $d: got '$got' want '$exp'"; fail=1; fi; }
@@ -39,14 +39,18 @@ check "key bare with padding ="   "$(key_of 'abc123=')"                "abc123="
 check "key NAME=value with =="    "$(key_of 'NOTIFY_API_KEY=abc123==')" "abc123=="
 check "key skips comments/blank"  "$(printf '# note\n\n  # indented\nk3y\nother\n' > "$tmp"; notify_api_key "$tmp")" "k3y"
 check "key empty file"            "$(: > "$tmp"; notify_api_key "$tmp")" ""
-# notify_api_delivered: HTTP 200 plus delivered/deduped true only (including bodies > 160 bytes).
+# notify_api_outcome: delivered/deduped/held true on 2xx = delivered; other 2xx = accepted (no fallback);
+# no code or non-2xx = error (the only case that falls back). Includes bodies > 160 bytes.
 pad="$(printf 'p%.0s' $(seq 1 300))"
-delivered(){ notify_api_delivered "$1" "$2" && echo yes || echo no; }
-check "delivered true"            "$(delivered 200 '{"delivered":true}')" yes
-check "delivered true, long body" "$(delivered 200 "{\"delivered\":true,\"detail\":\"$pad\"}")" yes
-check "deduped true"              "$(delivered 200 '{"delivered":false,"deduped":true}')" yes
-check "delivered false"           "$(delivered 200 '{"delivered":false}')" no
-check "non-JSON body"             "$(delivered 200 'ok')" no
-check "non-200 delivered true"    "$(delivered 401 '{"delivered":true}')" no
-check "empty code"                "$(delivered '' '{"delivered":true}')" no
+outcome(){ local o; o="$(notify_api_outcome "$1" "$2")"; echo "$o/$?"; }
+check "delivered true"            "$(outcome 200 '{"delivered":true}')" delivered/0
+check "delivered true, long body" "$(outcome 200 "{\"delivered\":true,\"detail\":\"$pad\"}")" delivered/0
+check "deduped true"              "$(outcome 200 '{"delivered":false,"deduped":true}')" delivered/0
+check "held true"                 "$(outcome 200 '{"delivered":false,"held":true}')" delivered/0
+check "delivered false: accepted" "$(outcome 200 '{"delivered":false}')" accepted/0
+check "non-JSON 2xx: accepted"    "$(outcome 202 'ok')" accepted/0
+check "non-2xx is an error"       "$(outcome 401 '{"delivered":true}')" error/1
+check "5xx is an error"           "$(outcome 503 '')" error/1
+check "no answer (000)"           "$(outcome 000 '')" error/1
+check "empty code"                "$(outcome '' '{"delivered":true}')" error/1
 echo "RESULT: $([ $fail = 0 ] && echo PASS || echo FAIL)"; [ $fail = 0 ]

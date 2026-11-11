@@ -95,6 +95,17 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 : "${CPU_HOG_PCT:=90}"       # a single process at/above this %core -> sys-diag WARN (CPU_HOG)
 : "${SWAP_WARN_KB:=1048576}" # swap-in-use above this (KiB) -> sys-diag WARN (MEMORY_PRESSURE)
 : "${TEMP_WARN_C:=85}"       # any CPU/GPU temp at/above this (°C) -> sys-diag WARN (THERMAL)
+: "${MEM_AVAIL_FLOOR_PCT:=5}"   # available RAM at/below this % of total -> sys-diag WARN (MEMORY_PRESSURE), never excused
+: "${SWAP_FREE_FLOOR_PCT:=10}"  # free swap at/below this % of swap total -> same WARN, never excused (no swap = skipped)
+: "${OOM_WINDOW_MIN:=30}"       # any OOM kill (kernel or systemd-oomd) in this many minutes -> sys-diag WARN (OOM_KILL)
+# Expected heavy work (off by default). When either list is set, a CPU-heavy or memory-heavy process that runs
+# under one of these roots, or whose command line (or an ancestor's) matches the regex, is expected work: it
+# alone no longer raises HIGH_LOAD / CPU_HOG / swap MEMORY_PRESSURE. The memory floor and OOM_KILL still fire.
+: "${WORKLOAD_ROOTS:=}"         # space-separated directories, e.g. where build/test checkouts live
+: "${WORKLOAD_REGEX:=}"         # extended regex matched against each process's (and ancestors') command line
+: "${WORKLOAD_OWNER_REGEX:=}"   # optional: an expected process with no ancestor matching this is ORPHANED_WORK
+: "${WORKLOAD_CPU_PCT:=50}"     # a process at/above this %core counts as CPU-heavy
+: "${WORKLOAD_MEM_PCT:=5}"      # a process at/above this % of RAM counts as memory-heavy
 
 # --- output helpers (keep digests short — a weak model's context is scarce) ---
 smols_identity(){ printf 'bin: %s\ndescription: %s\n\n' "$0" "$1"; }

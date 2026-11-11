@@ -34,6 +34,25 @@ smols_swap_used_kb(){
 smols_top_procs_cpu(){ ps -Aceo pid,comm,%cpu,%mem -r 2>/dev/null | tail -n +2 | head -"${1:-5}"; }
 smols_top_procs_mem(){ ps -Aceo pid,comm,%mem,%cpu -m 2>/dev/null | tail -n +2 | head -"${1:-5}"; }
 smols_top_cpu_pct(){ ps -Aceo %cpu -r 2>/dev/null | tail -n +2 | head -1; }
+# --- memory floor / expected-workload helpers (sys-diag; same contract as os-linux.sh) ---
+# macOS has no MemAvailable: approximate it as free + inactive pages (inactive is reclaimable on demand).
+smols_mem_avail_pct(){
+  local pagesize total_b free_p inactive_p
+  pagesize=$(sysctl -n hw.pagesize 2>/dev/null); pagesize=${pagesize:-4096}
+  total_b=$(sysctl -n hw.memsize 2>/dev/null)
+  [ "${total_b:-0}" -gt 0 ] 2>/dev/null || return 0
+  eval "$(vm_stat 2>/dev/null | awk -F'[: .]+' '/Pages free/{print "free_p="$(NF-1)} /Pages inactive/{print "inactive_p="$(NF-1)}')"
+  echo $(( (${free_p:-0} + ${inactive_p:-0}) * pagesize * 100 / total_b ))
+}
+# "total = 4096.00M  used = 3040.56M  free = 1055.44M" -> free/total as an integer %. Empty with no swap.
+smols_swap_free_pct(){
+  sysctl -n vm.swapusage 2>/dev/null | awk '{for(i=1;i<=NF;i++){v=$(i+2); gsub(/M$/,"",v); if($i=="total")t=v; if($i=="free")f=v}}
+    END{if(t+0>0) printf "%d\n", f*100/t}'
+}
+smols_oom_kills_recent(){ :; }   # no OOM-killer log equivalent on macOS (jetsam is not logged accessibly) -> unknown
+smols_procs_snapshot(){ ps -Aceo pid=,ppid=,pcpu=,pmem=,comm= 2>/dev/null; }
+smols_proc_cwd(){ have lsof && lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1; }
+smols_proc_args(){ ps -p "$1" -o args= 2>/dev/null; }
 
 smols_local_links(){
   ifconfig -a 2>/dev/null | awk '

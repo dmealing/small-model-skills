@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # smart-health — read-only SMART/health summary for local disks: NVMe wear (% used), available
-# spare, critical warnings, temperatures, and SATA reallocated/pending sectors. Flags failing or
+# spare, critical warnings, media errors, temperatures, and SATA reallocated/pending sectors. Flags failing or
 # soon-to-fail drives the CPU/GPU-only thermal check in sys-diag can't see. Changes nothing.
 #
 # Needs `smartctl` (smartmontools) and, for device access, root. Grant a read-only sudoers entry
 # so it runs unattended from a monitor, e.g. in /etc/sudoers.d/smart-health (chmod 440):
 #   <user> ALL=(root) NOPASSWD: /usr/sbin/smartctl -H -A /dev/nvme[0-9]*, /usr/sbin/smartctl -H -A /dev/sd[a-z]
-# Config: SMART_NVME_WEAR_WARN/_CRIT (%), SMART_SPARE_WARN (%), SMART_TEMP_WARN (°C), SMART_DEVICES.
+# Config: SMART_NVME_WEAR_WARN/_CRIT (%), SMART_SPARE_WARN (%), SMART_TEMP_WARN (°C), SMART_DEVICES,
+# SMART_DISTRUST_SENSORS (NVMe temperature sensors known to be stuck; see below).
 # Exit: 0 diagnosis ran (even if it found a problem), 1 tool itself couldn't run.
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
@@ -16,6 +17,13 @@ BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/commo
 : "${SMART_SPARE_WARN:=20}"       # NVMe 'Available Spare' at/below this % -> WARN (near the vendor threshold)
 : "${SMART_TEMP_WARN:=70}"        # any drive temperature at/above this (°C) -> WARN
 : "${SMART_DEVICES:=}"            # explicit device list (blank = auto-detect physical disks)
+# A stuck NVMe temperature sensor makes the controller itself report health FAILED with critical warning
+# 0x02 (temperature) on a healthy drive. List such sensors as space-separated "<device>:<sensor-number>"
+# (e.g. "nvme1n1:1" = "Temperature Sensor 1" of /dev/nvme1n1). For a listed device the drive temperature is
+# judged on its OTHER sensors, and health FAILED / crit 0x02 are set aside only while ALL of: 0x02 is the only
+# critical bit, the hot reading is the distrusted sensor's (the composite is not hotter than it), and every
+# other sensor reads below SMART_TEMP_WARN. Media errors, spare, wear and every other critical bit still count.
+: "${SMART_DISTRUST_SENSORS:=}"
 
 smols_identity "Read-only: disk SMART health — NVMe wear/spare/critical, SATA reallocated sectors, temps"
 
@@ -34,7 +42,7 @@ if [ -z "$devs" ]; then
 fi
 [ -n "$devs" ] || { smols_verdict FAIL PROBE_FAILED "no disks found to check (set SMART_DEVICES)"; exit 1; }
 
-worst=OK; reasons=""; ran=0
+worst=OK; reasons=""; notes=""; ran=0
 smols_sec "drives"
 rows=""
 for d in $devs; do
@@ -50,10 +58,36 @@ for d in $devs; do
   realloc="$(printf '%s\n' "$out" | awk '/Reallocated_Sector_Ct/{print $10; exit}')"
   pending="$(printf '%s\n' "$out" | awk '/Current_Pending_Sector/{print $10; exit}')"
 
+  media="$(printf '%s\n' "$out" | awk -F: '/Media and Data Integrity Errors/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+
+  # Distrusted (stuck) temperature sensor on this device? See SMART_DISTRUST_SENSORS above.
+  stuck_hot=0; dn=""
+  for ds in $SMART_DISTRUST_SENSORS; do
+    case "$ds" in "${d#/dev/}":*|"$d":*) dn="${ds##*:}"; break ;; esac
+  done
+  if [ -n "$dn" ]; then
+    dtemp="$(printf '%s\n' "$out" | awk -v n="$dn" -F: '$1 ~ "^Temperature Sensor "n"$"{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+    others="$(printf '%s\n' "$out" | awk -v n="$dn" -F: '$1 ~ /^Temperature Sensor [0-9]+$/ && $1 !~ "^Temperature Sensor "n"$"{gsub(/[^0-9]/,"",$2); if($2!="")print $2}')"
+    tmax_other="$(printf '%s\n' "$others" | sort -n | tail -1)"
+    if [ -n "$dtemp" ] && [ -n "$tmax_other" ] && [ "$tmax_other" -lt "$SMART_TEMP_WARN" ] 2>/dev/null \
+       && [ "${temp:-0}" -le "$dtemp" ] 2>/dev/null; then
+      notes="${notes}${d}: ignoring distrusted Temperature Sensor ${dn} (${dtemp}C, composite ${temp:-?}C); other sensors max ${tmax_other}C.
+"
+      temp="$tmax_other"
+      # 0x02 (temperature) alone, explained by the stuck sensor -> not a failing drive.
+      case "$crit" in 0x02|0x2|2) stuck_hot=1 ;; esac
+    fi
+  fi
+
   # per-drive verdict
   local_state=OK
-  if [ "$health" = FAILED ]; then local_state=FAIL; reasons="${reasons}${d}: SMART overall health FAILED. "; fi
-  if [ -n "$crit" ] && [ "$crit" != "0x00" ] && [ "$crit" != "0" ]; then local_state=FAIL; reasons="${reasons}${d}: NVMe critical warning ${crit}. "; fi
+  if [ "$stuck_hot" = 1 ]; then
+    health="PASSED*"   # FAILED was the controller reacting to the stuck sensor; * marks the override
+  else
+    if [ "$health" = FAILED ]; then local_state=FAIL; reasons="${reasons}${d}: SMART overall health FAILED. "; fi
+    if [ -n "$crit" ] && [ "$crit" != "0x00" ] && [ "$crit" != "0" ]; then local_state=FAIL; reasons="${reasons}${d}: NVMe critical warning ${crit}. "; fi
+  fi
+  if [ -n "$media" ] && [ "$media" -gt 0 ] 2>/dev/null; then local_state=FAIL; reasons="${reasons}${d}: ${media} media/data-integrity error(s). "; fi
   if [ -n "$wear" ] && [ "$wear" -ge "$SMART_NVME_WEAR_CRIT" ] 2>/dev/null; then local_state=FAIL; reasons="${reasons}${d}: ${wear}% wear (>=${SMART_NVME_WEAR_CRIT}%). "; fi
   if [ -n "$realloc" ] && [ "$realloc" -gt 0 ] 2>/dev/null; then [ "$local_state" = OK ] && local_state=WARN; reasons="${reasons}${d}: ${realloc} reallocated sector(s). "; fi
   if [ -n "$pending" ] && [ "$pending" -gt 0 ] 2>/dev/null; then local_state=FAIL; reasons="${reasons}${d}: ${pending} pending sector(s). "; fi
@@ -66,6 +100,7 @@ for d in $devs; do
 "
 done
 printf '%s' "$rows" | grep -v '^$' | smols_toon drives dev,health,wear,spare,temp,realloc
+[ -n "$notes" ] && printf '%s' "$notes" | sed 's/^/  note: /'
 
 smols_sec "verdict"
 if [ "$ran" = 0 ]; then

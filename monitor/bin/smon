@@ -46,11 +46,14 @@ SMON_CONFIG="${SMON_CONFIG:-$HOME/.config/small-model-skills/monitor.conf}"
 : "${SMON_WARN_SUSTAIN:=2}"                 # consecutive sweeps a WARN must persist before pushing
 : "${SMON_PROBE_TIMEOUT:=120}"              # seconds; defense against hung probes holding flock
 : "${SMON_FAIL_REMIND_SWEEPS:=0}"          # re-push a still-standing FAIL every N sweeps (0 = never remind)
+: "${SMON_FLAP_SUPPRESS:=0}"               # 1 = within one not-OK episode, don't re-push a WARN class already pushed
+: "${SMON_TAG_CLASSES:=}"                  # space-separated groups of comma-joined TAGs that count as ONE class
 : "${SMON_DIGEST_HOUR:=}"                   # hour (0-23) to push a once-daily status digest (blank = off)
 : "${SMON_ENRICH_FAIL:=0}"                  # 1 = also enrich FAIL messages; 0 = ship FAIL raw (no model wait)
 : "${SMON_FALLBACK_NOTIFY:=}"              # backends to try ONLY when a primary backend fails (e.g. "ha-script")
 : "${SMON_NOTIFY_API_URL:=}"               # http-api backend: POST {message, source} JSON here
 : "${SMON_NOTIFY_API_KEY_FILE:=}"          # http-api: 0600 file with the X-API-Key value (bare, or NAME=value)
+: "${SMON_NOTIFY_API_KEY_ENV:=}"           # http-api: NAME of an env var holding the key (tried before the file)
 : "${SMON_NOTIFY_API_SOURCE:=smon-$(hostname -s 2>/dev/null || echo host)}"  # http-api: source label (max 40 chars)
 : "${SMON_STATE_DIR:=$HOME/.local/state/smon}"
 : "${SMON_LOG:=$HOME/logs/smon.log}"
@@ -203,21 +206,31 @@ notify_api_key(){
   printf '%s' "$key"
 }
 
-# notify_api_delivered <http_code> <response_body> — 0 only on HTTP 200 with "delivered" or "deduped" true.
-notify_api_delivered(){
-  [ "$1" = 200 ] && printf '%s' "$2" | jq -e '.delivered == true or .deduped == true' >/dev/null 2>&1
+# notify_api_outcome <http_code> <response_body> -> one word on stdout, exit 0 unless "error":
+#   delivered — 2xx with "delivered", "deduped" or "held" true (held = the receiver queued it on purpose)
+#   accepted  — any other 2xx: the API answered, so it is NOT a transport failure and no fallback runs
+#   error     — no answer (timeout/unreachable) or a non-2xx code: the caller falls back
+notify_api_outcome(){
+  case "$1" in
+    2[0-9][0-9]) if printf '%s' "$2" | jq -e '.delivered == true or .deduped == true or .held == true' >/dev/null 2>&1
+                 then echo delivered; else echo accepted; fi ;;
+    *) echo error; return 1 ;;
+  esac
 }
 
 # notify_api <title> <body> — POST {message, source} to SMON_NOTIFY_API_URL with an X-API-Key
-# header. The key comes from SMON_NOTIFY_API_KEY_FILE and reaches curl through a 0600 header file,
-# never argv. The message ends with a UTC timestamp (lost if the message is cut to 1000 characters). Returns 0 only on HTTP 200 with
-# "delivered" or "deduped" true, non-zero otherwise (so notify_send can fall back).
+# header. The key comes from the env var NAMED by SMON_NOTIFY_API_KEY_ENV, else SMON_NOTIFY_API_KEY_FILE,
+# and reaches curl through a 0600 header file, never argv; it is never logged. The message ends with a UTC
+# timestamp (lost if the message is cut to 1000 characters). Returns non-zero only when the API is
+# unreachable or answers non-2xx (see notify_api_outcome), so notify_send falls back only then.
 notify_api(){
-  local title="$1" body="$2" key hdr out code resp logresp msg
-  [ -n "$SMON_NOTIFY_API_URL" ] && [ -r "$SMON_NOTIFY_API_KEY_FILE" ] || {
-    log "http-api skipped (missing SMON_NOTIFY_API_URL / readable SMON_NOTIFY_API_KEY_FILE)"; return 1; }
-  key="$(notify_api_key "$SMON_NOTIFY_API_KEY_FILE")"
-  [ -n "$key" ] || { log "http-api skipped (empty key file)"; return 1; }
+  local title="$1" body="$2" key="" hdr out code resp logresp msg outcome
+  [ -n "$SMON_NOTIFY_API_URL" ] || { log "http-api skipped (missing SMON_NOTIFY_API_URL)"; return 1; }
+  if [ -n "$SMON_NOTIFY_API_KEY_ENV" ]; then
+    printf '%s' "$SMON_NOTIFY_API_KEY_ENV" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*$' && key="${!SMON_NOTIFY_API_KEY_ENV:-}"
+  fi
+  [ -z "$key" ] && [ -r "$SMON_NOTIFY_API_KEY_FILE" ] && key="$(notify_api_key "$SMON_NOTIFY_API_KEY_FILE")"
+  [ -n "$key" ] || { log "http-api skipped (no key: SMON_NOTIFY_API_KEY_ENV names an unset/empty var, and no readable SMON_NOTIFY_API_KEY_FILE)"; return 1; }
   hdr="$(mktemp)" || { log "http-api skipped (mktemp failed)"; return 1; }
   printf 'X-API-Key: %s\n' "$key" > "$hdr"
   msg="$title"$'\n'"$body"$'\n'"($(date -u '+%F %T UTC'))"
@@ -227,8 +240,8 @@ notify_api(){
   rm -f "$hdr"
   code="${out##*$'\n'}"; resp="${out%$'\n'*}"
   logresp="$(printf '%s' "$resp" | tr -d '\n' | head -c 160)"
-  if notify_api_delivered "$code" "$resp"; then
-    log "http-api ok (HTTP 200 $logresp): $title"; return 0
+  if outcome="$(notify_api_outcome "$code" "$resp")"; then
+    log "http-api $outcome (HTTP $code $logresp): $title"; return 0
   fi
   log "http-api FAILED (HTTP ${code:-none} $logresp): $title"; return 1
 }
@@ -287,9 +300,16 @@ parse_verdict(){
   fi
 }
 
-# --- per-probe state: "status tag pending_since sweep_count alerted" ------------------------
-read_state(){ local f="$SMON_STATE_DIR/$1.state"; [ -r "$f" ] && cat "$f" || echo "OK NONE 0 0 0"; }
-write_state(){ printf '%s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" > "$SMON_STATE_DIR/$1.state"; }
+# --- per-probe state: "status tag pending_since sweep_count alerted reported" ---------------
+# reported = comma-joined problem classes pushed since the probe was last OK ("-" = none). A state file
+# written before this field existed reads as "-".
+read_state(){ local f="$SMON_STATE_DIR/$1.state"; [ -r "$f" ] && cat "$f" || echo "OK NONE 0 0 0 -"; }
+write_state(){ printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "${7:--}" > "$SMON_STATE_DIR/$1.state"; }
+
+# tag_class <tag> — the problem class a TAG belongs to: its SMON_TAG_CLASSES group, else the tag itself.
+tag_class(){ local g; for g in $SMON_TAG_CLASSES; do case ",$g," in *",$1,"*) printf '%s' "$g"; return ;; esac; done; printf '%s' "$1"; }
+# class_reported <class> <reported-list> — true if the class is already in the comma-joined list.
+class_reported(){ case ",$2," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
 # --- core: evaluate one probe ---------------------------------------------------------------
 eval_probe(){
@@ -310,8 +330,10 @@ eval_probe(){
     fi
   fi
   # shellcheck disable=SC2046
-  IFS=" " read -r p_status p_tag p_since p_count p_alerted <<<"$(read_state "$probe")"
+  IFS=" " read -r p_status p_tag p_since p_count p_alerted p_reported <<<"$(read_state "$probe")"
+  [ -n "$p_reported" ] || p_reported=-
   local p_alerted_prev="$p_alerted"   # whether the state we're leaving had been alerted
+  local cls; cls="$(tag_class "$V_TAG")"
 
   local key_now="$V_STATUS/$V_TAG" key_prev="$p_status/$p_tag"
   local do_alert=0 kind=""
@@ -338,9 +360,16 @@ eval_probe(){
     case "$V_STATUS" in
       FAIL) do_alert=1; kind=fail; p_count=0; p_since=$now ;;   # p_count counts sweeps toward the next reminder
       WARN) p_since=$now; p_count=1
-            [ "$SMON_WARN_SUSTAIN" -le 1 ] && { do_alert=1; kind=warn; } ;;
-      OK)   # recovery only if we had alerted on the state we just left
-            [ "$p_alerted_prev" = 1 ] && { do_alert=1; kind=recovery; }
+            if [ "$SMON_FLAP_SUPPRESS" = 1 ] && class_reported "$cls" "$p_reported"; then
+              # Flip-flop: this WARN class was already pushed in the current not-OK episode (e.g. load
+              # alternating CPU_HOG <-> MEMORY_PRESSURE). Count it as reported without re-pushing.
+              p_alerted=1; log "FLAP-SUPPRESSED $probe $key_prev -> $key_now (class $cls already reported)"
+            elif [ "$SMON_WARN_SUSTAIN" -le 1 ]; then do_alert=1; kind=warn; fi ;;
+      OK)   # recovery only if we had alerted on the state we just left — or, with flap suppression, on
+            # anything in this episode (one recovery closes the whole episode).
+            if [ "$p_alerted_prev" = 1 ] || { [ "$SMON_FLAP_SUPPRESS" = 1 ] && [ "$p_reported" != - ]; }; then
+              do_alert=1; kind=recovery
+            fi
             p_count=0; p_since=$now ;;
     esac
   fi
@@ -363,7 +392,11 @@ eval_probe(){
     fi
     if [ "$dispatched" = 1 ]; then
       log "ALERT[$kind] $probe $key_prev -> $key_now"
-      [ "$kind" = recovery ] && new_alerted=0 || new_alerted=1
+      if [ "$kind" = recovery ]; then new_alerted=0
+      else
+        new_alerted=1
+        class_reported "$cls" "$p_reported" || { [ "$p_reported" = - ] && p_reported="$cls" || p_reported="$p_reported,$cls"; }
+      fi
     else
       # suppressed (quiet hours): leave the finding UNalerted so it re-tries on a later sweep.
       # Hold the maturing counter at the sustain threshold so it fires immediately once out of
@@ -373,7 +406,8 @@ eval_probe(){
     fi
   fi
 
-  write_state "$probe" "$V_STATUS" "$V_TAG" "$p_since" "$p_count" "$new_alerted"
+  [ "$V_STATUS" = OK ] && p_reported=-   # back to OK ends the episode
+  write_state "$probe" "$V_STATUS" "$V_TAG" "$p_since" "$p_count" "$new_alerted" "$p_reported"
   SWEEP_SUMMARY="${SWEEP_SUMMARY}${probe}=${V_STATUS} "
 }
 
@@ -410,7 +444,7 @@ maybe_digest(){
   for f in "$SMON_STATE_DIR"/*.state; do
     [ -r "$f" ] || continue
     pr="$(basename "$f" .state)"
-    IFS=" " read -r st tg _ _ _ < "$f"
+    IFS=" " read -r st tg _ < "$f"
     line="${line}${pr}: ${st} ${tg}"$'\n'
     case "$st" in FAIL) worst=FAIL ;; WARN) [ "$worst" = OK ] && worst=WARN ;; esac
   done
