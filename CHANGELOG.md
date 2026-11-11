@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format is based on
   table when the rule is on.
 - **`sys-diag` `ORPHANED_WORK` (WARN)** — an expected heavy process with no live owner: its working directory was
   deleted, or no ancestor matches `WORKLOAD_OWNER_REGEX`, or (when that is blank) it was re-parented to init or a
-  systemd manager. Only checked while the expected-workload rule is on.
+  systemd manager. Only checked while the expected-workload rule is on. `WORKLOAD_DAEMON_REGEX` names build
+  daemons that detach by design (kept-warm compiler/build servers): they count as expected work and are not
+  orphans merely for being re-parented.
 - **`sys-diag` memory floor and `OOM_KILL` (WARN)**, never excused by expected work and checked before any load
   rule: `MEMORY_PRESSURE` when available RAM is at/below `MEM_AVAIL_FLOOR_PCT` (5) or free swap at/below
   `SWAP_FREE_FLOOR_PCT` (10; skipped with no swap), and `OOM_KILL` when the kernel OOM killer or systemd-oomd

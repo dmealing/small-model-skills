@@ -28,7 +28,7 @@ smols_procs_snapshot(){ ps -eo pid=,ppid=,pcpu=,pmem=,comm= 2>/dev/null; }
 # smols_proc_cwd <pid> — the process's working directory ("<dir> (deleted)" if it was removed). Empty if unreadable.
 smols_proc_cwd(){ readlink "/proc/$1/cwd" 2>/dev/null; }
 # smols_proc_args <pid> — the full command line, NUL separators turned into spaces.
-smols_proc_args(){ tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null; }
+smols_proc_args(){ { tr '\0' ' ' < "/proc/$1/cmdline"; } 2>/dev/null; }
 
 smols_local_links(){ ip -br link 2>/dev/null | awk '$1!="lo"{print $1, $2}'; }
 smols_host_addr(){ ip -4 -br addr 2>/dev/null | awk '$1!="lo" && $3!=""{print $1, $3; exit}'; }

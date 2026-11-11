@@ -104,6 +104,7 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 : "${WORKLOAD_ROOTS:=}"         # space-separated directories, e.g. where build/test checkouts live
 : "${WORKLOAD_REGEX:=}"         # extended regex matched against each process's (and ancestors') command line
 : "${WORKLOAD_OWNER_REGEX:=}"   # optional: an expected process with no ancestor matching this is ORPHANED_WORK
+: "${WORKLOAD_DAEMON_REGEX:=}"  # build daemons that detach by design (expected work, never orphaned by re-parenting)
 : "${WORKLOAD_CPU_PCT:=50}"     # a process at/above this %core counts as CPU-heavy
 : "${WORKLOAD_MEM_PCT:=5}"      # a process at/above this % of RAM counts as memory-heavy
 

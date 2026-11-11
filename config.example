@@ -77,6 +77,8 @@ FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetc
 # WORKLOAD_REGEX='Runner\.Worker|pytest|vitest|gradle'  # extended regex over each process's command line
 # WORKLOAD_OWNER_REGEX=      # an expected process with no ancestor matching this is ORPHANED_WORK. Blank = orphaned
 #                            #   means re-parented to init/a systemd manager, or its working directory was deleted.
+# WORKLOAD_DAEMON_REGEX=     # build servers that detach on purpose and stay warm (compiler/build daemons): expected work,
+#                            #   and NOT orphaned merely for being re-parented, e.g. 'KotlinCompileDaemon|MSBuild\.dll'
 # WORKLOAD_CPU_PCT=50        # a process at/above this %core counts as CPU-heavy
 # WORKLOAD_MEM_PCT=5         # a process at/above this % of RAM counts as memory-heavy
 # SMART_NVME_WEAR_WARN=80    # smart-health WARN (DRIVE_AGING) when NVMe 'Percentage Used' >= this %

@@ -105,6 +105,12 @@ fleet
 check "owner regex matches a live ancestor: no orphan" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work WORKLOAD_OWNER_REGEX='agent-cli' FAKE_LOAD=94 run)"
 check "owner regex matches no ancestor: ORPHANED_WORK" "WARN ORPHANED_WORK" "$(WORKLOAD_ROOTS=/work WORKLOAD_OWNER_REGEX='some-other-owner' FAKE_LOAD=94 run)"
 fleet
+proc 2400 900 150 4.0 java /home/u/.cache/kotlin/daemon "java -cp x.jar org.example.KotlinCompileDaemon"
+check "detached build daemon matching WORKLOAD_DAEMON_REGEX: expected, not orphaned" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work WORKLOAD_DAEMON_REGEX='CompileDaemon' FAKE_LOAD=94 run)"
+check "same daemon unconfigured: an unexpected heavy process" "WARN HIGH_LOAD" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 run)"
+proc 2401 900 120 1.0 node "/work/gone (deleted)" "node CompileDaemon"
+check "daemon whose working directory was deleted: still ORPHANED_WORK" "pid 2401 (node)" "$(WORKLOAD_ROOTS=/work WORKLOAD_DAEMON_REGEX='CompileDaemon' FAKE_LOAD=94 run)"
+fleet
 proc 2300 900 180 4.0 java /work/e "java -jar gradle-daemon.jar"
 check "orphan check is off with no workload config" "WARN HIGH_LOAD" "$(FAKE_LOAD=94 run)"
 
