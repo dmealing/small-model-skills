@@ -20,7 +20,11 @@ smols_swap_free_pct(){ awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{if(t>0) p
 # by the kernel OOM killer or systemd-oomd. Empty when the journal can't be read (unknown, not zero).
 smols_oom_kills_recent(){
   have journalctl || return 0
-  local j; j="$(journalctl -q --no-pager -S "-${1:-30}min" 2>/dev/null)" || return 0
+  local j err; err="$(mktemp)" || return 0
+  j="$(journalctl --no-pager -S "-${1:-30}min" 2>"$err")" || { rm -f "$err"; return 0; }
+  # A user outside adm/systemd-journal gets a partial journal and exit 0: that is unknown, not zero.
+  if grep -qi 'not seeing messages from other users' "$err"; then rm -f "$err"; return 0; fi
+  rm -f "$err"
   printf '%s\n' "$j" | grep -ciE 'out of memory: kill|systemd-oomd.*Killed '
 }
 # smols_procs_snapshot — every process as "pid ppid pcpu pmem comm" (comm last; it may contain spaces).

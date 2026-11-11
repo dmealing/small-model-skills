@@ -103,7 +103,8 @@ elif [ "$load_excused" = 0 ] && [ -n "$load1" ] && awk -v l="$load1" -v c="$ncpu
 elif [ "${hi:-0}" -ge "$CPU_HOG_PCT" ] 2>/dev/null; then
   smols_verdict WARN CPU_HOG "one process is using ~${hi}% of a core (see top CPU processes)."
   smols_help "Inspect the top CPU process above; if it's stuck/runaway, stop and restart it"
-elif [ "$swap_excused" = 0 ] && [ "${swapused:-0}" -gt "$SWAP_WARN_KB" ] 2>/dev/null; then
+elif [ "$swap_excused" = 0 ] && [ "${swapused:-0}" -gt "$SWAP_WARN_KB" ] 2>/dev/null \
+     && [ -n "$availpct" ] && [ "$availpct" -le "$SWAP_FLOOR_RAM_PCT" ] 2>/dev/null; then
   smols_verdict WARN MEMORY_PRESSURE "heavy swap in use -> RAM may be exhausted (see top memory processes)."
   smols_help "Close or restart the top memory process above, or add RAM/reduce concurrent workloads"
 elif [ -n "$tmax" ] && [ "${tmax:-0}" -ge "$TEMP_WARN_C" ] 2>/dev/null; then

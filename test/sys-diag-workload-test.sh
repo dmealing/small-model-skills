@@ -62,10 +62,12 @@ check "OK prose says the load is expected work" "all expected work" "$(WORKLOAD_
 check "regex instead of roots also excuses it" "OK NOMINAL" "$(WORKLOAD_REGEX='java|dotnet test|bun test' FAKE_LOAD=94 run)"
 reset_procs
 proc 2104 2000 20 14.0 java /work/e "java -Xmx16g IntegrationTests"   # memory-heavy, CPU-light
-check "heavy swap without workload config: MEMORY_PRESSURE as before" "WARN MEMORY_PRESSURE — heavy swap" "$(FAKE_SWAPUSED_KB=25000000 run)"
-check "heavy swap from expected work: no MEMORY_PRESSURE" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work FAKE_SWAPUSED_KB=25000000 run)"
+check "heavy swap without workload config: MEMORY_PRESSURE as before" "WARN MEMORY_PRESSURE — heavy swap" "$(FAKE_AVAIL=15 FAKE_SWAPUSED_KB=25000000 run)"
+check "heavy swap from expected work: no MEMORY_PRESSURE" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work FAKE_AVAIL=15 FAKE_SWAPUSED_KB=25000000 run)"
+check "heavy swap with ample RAM (34 GiB of 64 available), no workload config: no alert" "OK NOMINAL" "$(FAKE_AVAIL=53 FAKE_SWAPUSED_KB=23068672 run)"
+check "same swap with RAM under the mark: MEMORY_PRESSURE" "WARN MEMORY_PRESSURE" "$(FAKE_AVAIL=15 FAKE_SWAPUSED_KB=23068672 run)"
 proc 2105 1000 1 12.0 browser /srv/u "browser"
-check "heavy swap with an unexpected memory hog: MEMORY_PRESSURE" "WARN MEMORY_PRESSURE" "$(WORKLOAD_ROOTS=/work FAKE_SWAPUSED_KB=25000000 run)"
+check "heavy swap with an unexpected memory hog: MEMORY_PRESSURE" "WARN MEMORY_PRESSURE" "$(WORKLOAD_ROOTS=/work FAKE_AVAIL=15 FAKE_SWAPUSED_KB=25000000 run)"
 
 echo "=== expected work is inherited from an ancestor ==="
 fleet
@@ -126,6 +128,13 @@ check "kernel OOM kill counted" "^1$" "$(oomcount 'kernel: Out of memory: Killed
 check "cgroup-scoped OOM kill counted" "^1$" "$(oomcount 'kernel: Memory cgroup out of memory: Killed process 43 (dotnet) total-vm:1kB')"
 check "systemd-oomd kill counted" "^1$" "$(oomcount 'systemd-oomd[1]: Killed app.slice/x.scope due to memory pressure')"
 check "unrelated journal line not counted" "^0$" "$(oomcount 'sshd[1]: Accepted publickey')"
+# journalctl run by a user outside adm/systemd-journal exits 0 with partial output plus this stderr hint.
+cat > "$TMP/stub/journalctl" <<'EOS'
+#!/bin/sh
+echo "Hint: You are currently not seeing messages from other users and the system." >&2
+cat "$FAKE_JOURNAL"
+EOS
+check "partial journal is unknown (empty), not 0" "^unknown$" "$(oomcount 'sshd[1]: Accepted publickey')unknown"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

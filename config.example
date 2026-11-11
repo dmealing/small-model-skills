@@ -60,7 +60,8 @@ FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetc
 # DISK_CRIT_PCT=95      # disk-report FAIL (DISK_CRITICAL) at/above this %
 # LOAD_WARN_FACTOR=1.5  # sys-diag WARN (HIGH_LOAD) when 1-min load > cores * this factor
 # CPU_HOG_PCT=90        # sys-diag WARN (CPU_HOG) when a single process uses >= this %core
-# SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB
+# SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB AND available RAM is
+#                       #   <= SWAP_FLOOR_RAM_PCT (swap in use with ample RAM is not an alert)
 # TEMP_WARN_C=85        # sys-diag WARN (THERMAL) when the hottest CPU/GPU sensor is >= this °C
 # MEM_AVAIL_FLOOR_PCT=5      # sys-diag WARN (MEMORY_PRESSURE) when available RAM is <= this % of total (never excused)
 # SWAP_FREE_FLOOR_PCT=10     # ...or when free swap is <= this % of swap total AND available RAM is <= SWAP_FLOOR_RAM_PCT

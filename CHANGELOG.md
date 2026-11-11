@@ -22,7 +22,7 @@ All notable changes to this project are documented here. The format is based on
 - **`sys-diag` memory floor and `OOM_KILL` (WARN)**, never excused by expected work and checked before any load
   rule: `MEMORY_PRESSURE` when available RAM is at/below `MEM_AVAIL_FLOOR_PCT` (5) or free swap at/below
   `SWAP_FREE_FLOOR_PCT` (10; skipped with no swap) while available RAM is also at/below `SWAP_FLOOR_RAM_PCT` (20),
-  so a nearly full swap with ample RAM is not an alert, and `OOM_KILL` when the kernel OOM killer or systemd-oomd
+  so a nearly full swap with ample RAM is not an alert (the swap-in-use rule, `SWAP_WARN_KB`, is gated on the same RAM mark), and `OOM_KILL` when the kernel OOM killer or systemd-oomd
   killed a process (including cgroup-scoped kills) in the last `OOM_WINDOW_MIN` (30) minutes (Linux journal; unknown on macOS). New backend
   helpers `smols_mem_avail_pct`, `smols_swap_free_pct`, `smols_oom_kills_recent`, `smols_procs_snapshot`,
   `smols_proc_cwd`, `smols_proc_args` on Linux and macOS.
