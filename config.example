@@ -63,7 +63,9 @@ FREEZE_REMOTE_LOG_CMD=              # freeze-forensics: optional command to fetc
 # SWAP_WARN_KB=1048576  # sys-diag WARN (MEMORY_PRESSURE) when swap-in-use exceeds this many KiB
 # TEMP_WARN_C=85        # sys-diag WARN (THERMAL) when the hottest CPU/GPU sensor is >= this °C
 # MEM_AVAIL_FLOOR_PCT=5      # sys-diag WARN (MEMORY_PRESSURE) when available RAM is <= this % of total (never excused)
-# SWAP_FREE_FLOOR_PCT=10     # ...or when free swap is <= this % of swap total (skipped on a host with no swap)
+# SWAP_FREE_FLOOR_PCT=10     # ...or when free swap is <= this % of swap total AND available RAM is <= SWAP_FLOOR_RAM_PCT
+#                            # (skipped on a host with no swap; nearly full swap with ample RAM is not an alert)
+# SWAP_FLOOR_RAM_PCT=20      # available-RAM mark (% of total) that must also be breached for the swap floor
 # OOM_WINDOW_MIN=30          # sys-diag WARN (OOM_KILL) when the kernel OOM killer or systemd-oomd killed anything in
 #                            #   this many minutes (never excused). Keep it longer than SMON_WARN_SUSTAIN sweeps.
 #

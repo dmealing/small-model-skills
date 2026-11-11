@@ -81,7 +81,8 @@ check "unexpected hog at normal load: CPU_HOG" "WARN CPU_HOG — one process is 
 echo "=== memory floor: always alerts, even under expected work ==="
 fleet
 check "available RAM under the floor" "WARN MEMORY_PRESSURE — only 3% of RAM available" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 FAKE_AVAIL=3 run)"
-check "swap free under the floor" "only 4% of swap free" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 FAKE_SWAPFREE=4 run)"
+check "swap nearly full with RAM under the mark" "WARN MEMORY_PRESSURE — only 4% of swap free" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 FAKE_SWAPFREE=4 FAKE_AVAIL=15 run)"
+check "swap nearly full with ample RAM is not an alert" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 FAKE_SWAPFREE=4 FAKE_AVAIL=60 run)"
 check "no swap at all (empty) is not a breach" "OK NOMINAL" "$(WORKLOAD_ROOTS=/work FAKE_LOAD=94 FAKE_SWAPFREE='' run)"
 check "floor applies with no workload config too" "WARN MEMORY_PRESSURE" "$(FAKE_AVAIL=2 run)"
 
@@ -113,6 +114,18 @@ check "daemon whose working directory was deleted: still ORPHANED_WORK" "pid 240
 fleet
 proc 2300 900 180 4.0 java /work/e "java -jar gradle-daemon.jar"
 check "orphan check is off with no workload config" "WARN HIGH_LOAD" "$(FAKE_LOAD=94 run)"
+
+echo "=== smols_oom_kills_recent counts kernel, cgroup and systemd-oomd kills (stub journal) ==="
+cat > "$TMP/stub/journalctl" <<'EOS'
+#!/bin/sh
+cat "$FAKE_JOURNAL"
+EOS
+chmod +x "$TMP/stub/journalctl"
+oomcount(){ printf '%s\n' "$1" > "$TMP/journal"; FAKE_JOURNAL="$TMP/journal" PATH="$TMP/stub:$PATH" bash -c '. "$1/bin/lib/common.sh"; . "$1/bin/lib/os-linux.sh"; smols_oom_kills_recent 30' _ "$TMP"; }
+check "kernel OOM kill counted" "^1$" "$(oomcount 'kernel: Out of memory: Killed process 42 (java) total-vm:1kB')"
+check "cgroup-scoped OOM kill counted" "^1$" "$(oomcount 'kernel: Memory cgroup out of memory: Killed process 43 (dotnet) total-vm:1kB')"
+check "systemd-oomd kill counted" "^1$" "$(oomcount 'systemd-oomd[1]: Killed app.slice/x.scope due to memory pressure')"
+check "unrelated journal line not counted" "^0$" "$(oomcount 'sshd[1]: Accepted publickey')"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

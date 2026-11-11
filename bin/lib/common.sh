@@ -96,7 +96,8 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 : "${SWAP_WARN_KB:=1048576}" # swap-in-use above this (KiB) -> sys-diag WARN (MEMORY_PRESSURE)
 : "${TEMP_WARN_C:=85}"       # any CPU/GPU temp at/above this (°C) -> sys-diag WARN (THERMAL)
 : "${MEM_AVAIL_FLOOR_PCT:=5}"   # available RAM at/below this % of total -> sys-diag WARN (MEMORY_PRESSURE), never excused
-: "${SWAP_FREE_FLOOR_PCT:=10}"  # free swap at/below this % of swap total -> same WARN, never excused (no swap = skipped)
+: "${SWAP_FREE_FLOOR_PCT:=10}"  # free swap at/below this % of swap total, AND available RAM at/below SWAP_FLOOR_RAM_PCT -> same WARN (no swap = skipped)
+: "${SWAP_FLOOR_RAM_PCT:=20}"   # available-RAM mark (% of total) that must also be breached for the swap floor to count
 : "${OOM_WINDOW_MIN:=30}"       # any OOM kill (kernel or systemd-oomd) in this many minutes -> sys-diag WARN (OOM_KILL)
 # Expected heavy work (off by default). When either list is set, a CPU-heavy or memory-heavy process that runs
 # under one of these roots, or whose command line (or an ancestor's) matches the regex, is expected work: it

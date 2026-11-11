@@ -21,7 +21,7 @@ smols_swap_free_pct(){ awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{if(t>0) p
 smols_oom_kills_recent(){
   have journalctl || return 0
   local j; j="$(journalctl -q --no-pager -S "-${1:-30}min" 2>/dev/null)" || return 0
-  printf '%s\n' "$j" | grep -cE 'Out of memory: Kill(ed)? process|systemd-oomd.*Killed '
+  printf '%s\n' "$j" | grep -ciE 'out of memory: kill|systemd-oomd.*Killed '
 }
 # smols_procs_snapshot — every process as "pid ppid pcpu pmem comm" (comm last; it may contain spaces).
 smols_procs_snapshot(){ ps -eo pid=,ppid=,pcpu=,pmem=,comm= 2>/dev/null; }

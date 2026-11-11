@@ -82,8 +82,9 @@ swapfreepct=$(smols_swap_free_pct)
 ooms=$(smols_oom_kills_recent "$OOM_WINDOW_MIN")
 mem_low=""
 [ -n "$availpct" ] && [ "$availpct" -le "$MEM_AVAIL_FLOOR_PCT" ] 2>/dev/null && mem_low="only ${availpct}% of RAM available (floor ${MEM_AVAIL_FLOOR_PCT}%)"
-if [ -n "$swapfreepct" ] && [ "$swapfreepct" -le "$SWAP_FREE_FLOOR_PCT" ] 2>/dev/null; then
-  mem_low="${mem_low:+$mem_low, }only ${swapfreepct}% of swap free (floor ${SWAP_FREE_FLOOR_PCT}%)"
+if [ -n "$swapfreepct" ] && [ "$swapfreepct" -le "$SWAP_FREE_FLOOR_PCT" ] 2>/dev/null \
+   && [ -n "$availpct" ] && [ "$availpct" -le "$SWAP_FLOOR_RAM_PCT" ] 2>/dev/null; then
+  mem_low="${mem_low:+$mem_low, }only ${swapfreepct}% of swap free (floor ${SWAP_FREE_FLOOR_PCT}%) with ${availpct}% of RAM available (mark ${SWAP_FLOOR_RAM_PCT}%)"
 fi
 # Order matters: a real memory shortage outranks load, so expected work can never mask it.
 if [ "${ooms:-0}" -gt 0 ] 2>/dev/null; then
