@@ -128,7 +128,7 @@ _notify_one(){
     ha-push)   notify_ha "$title" "$body" ;;   # returns non-zero on HTTP failure
     ha-script) notify_ha_script "$kind" "$probe" "$title" "$body" ;;  # severity-aware HA fan-out
     matrix)    notify_matrix "$title" "$body" ;;
-    http-api)  notify_api "$title" "$body" ;;   # returns non-zero unless delivered
+    http-api)  notify_api "$title" "$body" ;;   # returns non-zero only if unreachable or non-2xx
     kuma)      return 0 ;;  # kuma is a heartbeat, not an alert channel — handled at sweep end
     *) log "unknown notify backend '$b'"; return 1 ;;
   esac

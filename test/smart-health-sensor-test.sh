@@ -8,7 +8,9 @@ PROBE="$REPO/bin/smart-health"
 TMP="$(mktemp -d /tmp/smart-health-test.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/stub"
+# shellcheck disable=SC2016  # single quotes: the stub script body must keep its $ references literal
 printf '#!/bin/sh\ncat "$FAKE_SMART"\n' > "$TMP/stub/smartctl"
+# shellcheck disable=SC2016
 printf '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n' > "$TMP/stub/sudo"
 chmod +x "$TMP/stub/smartctl" "$TMP/stub/sudo"
 
