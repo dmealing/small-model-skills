@@ -134,7 +134,15 @@ cat > "$TMP/stub/journalctl" <<'EOS'
 echo "Hint: You are currently not seeing messages from other users and the system." >&2
 cat "$FAKE_JOURNAL"
 EOS
-check "partial journal is unknown (empty), not 0" "^unknown$" "$(oomcount 'sshd[1]: Accepted publickey')unknown"
+# checkempty <desc> <actual> — passes only when the value is empty (unknown), not a count.
+checkempty(){ if [ -z "$2" ]; then echo "  ✓ $1"; PASS=$((PASS+1)); else echo "  ✗ $1 — expected empty, got: $2"; FAIL=$((FAIL+1)); fi; }
+checkempty "partial journal (hint on stderr) is unknown: empty output, not 0" "$(oomcount 'sshd[1]: Accepted publickey')"
+cat > "$TMP/stub/journalctl" <<'EOS'
+#!/bin/sh
+echo "Hint: You are currently not seeing messages from other users and the system."
+cat "$FAKE_JOURNAL"
+EOS
+checkempty "partial journal (hint on stdout) is unknown: empty output, not 0" "$(oomcount 'kernel: Out of memory: Killed process 42 (java)')"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
