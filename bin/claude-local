@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# claude-local — run Claude Code against a local Ollama model, fully offline.
-# Usage: claude-local [<ollama model tag>] [-- claude args...]
-#   No arg -> $CLAUDE_LOCAL_MODEL env, else LOCAL_MODEL_DEFAULT from config, else qwen3-coder-cc.
-#   A tag  -> used as the Ollama model (e.g. `claude-local qwen2.5-coder:14b`).
-# Any capable ~30B-class MoE coder model works; qwen3-coder-cc is the tested default. A 70B local load is a
-# real resource risk, so there's no shortcut — pass the full tag explicitly if you want one.
+# claude-local — run Claude Code against a local model, fully offline.
+# Usage: claude-local [<engine or ollama model tag>] [-- claude args...]
+#   No arg  -> $CLAUDE_LOCAL_MODEL env, else LOCAL_MODEL_DEFAULT from config, else qwen3-coder-cc.
+#   strata  -> the Strata engine (alias: flashnext): Claude Code talks to Strata's own Anthropic endpoint.
+#              `strata:<size>` picks a quant other than STRATA_SIZE (e.g. `claude-local strata:iq3_s`).
+#              If Strata is not answering, it is started with STRATA_START_SCRIPT (after a free-RAM check).
+#   any other tag -> used as the Ollama model (e.g. `claude-local qwen2.5-coder:14b`).
+# Any capable ~30B-class MoE coder model works on Ollama; qwen3-coder-cc is the tested default. A 70B local
+# load is a real resource risk, so there's no shortcut — pass the full tag explicitly if you want one.
 set -euo pipefail
 
 SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
@@ -16,7 +19,7 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 model="${CLAUDE_LOCAL_MODEL:-$LOCAL_MODEL_DEFAULT}"
 case "${1:-}" in
   ""|-*) ;;                # no model arg, or first arg is a claude flag -> keep the default
-  *) model="$1"; shift ;;  # first arg is the Ollama model tag
+  *) model="$1"; shift ;;  # first arg is the engine or Ollama model tag
 esac
 
 # Curated-skills mode: point Claude Code at a config home that exposes ONLY the small-model-skills,
@@ -34,13 +37,171 @@ if [ "${SMOLS_CURATED_SKILLS:-1}" != 0 ] && [ -d "$CC_HOME/skills" ]; then
   cc_env=(CLAUDE_CONFIG_DIR="$CC_HOME")
 fi
 
+die(){ echo "claude-local: $*" >&2; exit 1; }
+say(){ echo "claude-local: $*" >&2; }
+
+# --- Strata engine -------------------------------------------------------------------------------------
+# strata_health: print Strata's /health JSON (empty + non-zero when it is not answering).
+strata_health(){ curl -fsS --max-time 3 "$STRATA_URL/health" 2>/dev/null; }
+# json_field <json> <key>: a bare scalar field (true/false/number/"string") from flat JSON, quotes stripped.
+json_field(){ printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" | head -1; }
+strata_loaded(){ local h; h="$(strata_health)" || return 1; [ "$(json_field "$h" loaded)" = true ]; }
+
+# meminfo_gib <field>: a /proc/meminfo field in whole GiB (empty when the host has no /proc/meminfo, e.g. macOS).
+meminfo_gib(){
+  local kb
+  kb="$(awk -v f="$1:" '$1 == f {print $2; exit}' "${SMOLS_MEMINFO:-/proc/meminfo}" 2>/dev/null)" || true
+  if [ -n "$kb" ]; then echo $((kb / 1048576)); fi
+}
+
+# strata_ram_check: refuse to load the model unless BOTH MemAvailable and SwapFree are at their floors (idle
+# sessions can be pushed to swap while it loads, so RAM alone need not cover it). Never frees memory itself.
+strata_ram_check(){
+  local ram swap
+  ram="$(meminfo_gib MemAvailable)"; swap="$(meminfo_gib SwapFree)"
+  if [ -z "$ram" ]; then say "cannot read MemAvailable; skipping the free-memory check"; return 0; fi
+  : "${swap:=0}"
+  if [ "$ram" -lt "$STRATA_MEM_FLOOR_GIB" ] || [ "$swap" -lt "$STRATA_SWAP_FLOOR_GIB" ]; then
+    die "not starting Strata ($STRATA_SIZE): ${ram} GiB RAM available (need ${STRATA_MEM_FLOOR_GIB}," \
+        "STRATA_MEM_FLOOR_GIB) and ${swap} GiB swap free (need ${STRATA_SWAP_FLOOR_GIB}, STRATA_SWAP_FLOOR_GIB)." \
+        "Free some memory and try again; nothing was stopped."
+  fi
+  say "memory check ok: ${ram} GiB RAM available (floor ${STRATA_MEM_FLOOR_GIB}), ${swap} GiB swap free (floor ${STRATA_SWAP_FLOOR_GIB})"
+}
+
+# strata_engine_config: write a copy of STRATA_CONFIG with --max-context set to STRATA_MAX_CONTEXT and print its
+# path. The shared config is never edited. Prints nothing when there is nothing to override.
+strata_engine_config(){
+  [ -n "$STRATA_CONFIG" ] && [ -n "$STRATA_MAX_CONTEXT" ] || return 0
+  [ -r "$STRATA_CONFIG" ] || die "STRATA_CONFIG not readable: $STRATA_CONFIG"
+  command -v python3 >/dev/null 2>&1 || die "python3 is needed to write the Strata context override"
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/small-model-skills"
+  local out
+  out="$dir/$(basename "$STRATA_CONFIG" .json)-ctx$STRATA_MAX_CONTEXT.json"
+  mkdir -p "$dir"
+  python3 -I - "$STRATA_CONFIG" "$STRATA_MAX_CONTEXT" "$out" <<'PY' || die "could not write the Strata config override"
+import json, os, sys
+src, ctx, out = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg = json.load(open(src))
+args = cfg.setdefault("args", [])
+if "--max-context" in args:
+    args[args.index("--max-context") + 1] = ctx
+else:
+    args += ["--max-context", ctx]
+text = json.dumps(cfg, indent=1)
+old = open(out).read() if os.path.exists(out) else None
+if old != text:                                   # unchanged bytes are not rewritten
+    tmp = out + ".tmp"
+    open(tmp, "w").write(text)
+    os.replace(tmp, out)
+PY
+  echo "$out"
+}
+
+# strata_wait <pid or empty>: wait (bounded) for /health to report loaded, with progress on stderr.
+strata_wait(){
+  local pid="$1" start now last=0
+  start="$(date +%s)"
+  while :; do
+    strata_loaded && { say "Strata is loaded ($(( $(date +%s) - start ))s)"; return 0; }
+    now="$(date +%s)"
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      say "Strata exited before it finished loading; last lines of $STRATA_LOG:"
+      tail -n 15 "$STRATA_LOG" >&2 2>/dev/null || true
+      exit 1
+    fi
+    [ $((now - start)) -ge "$STRATA_START_TIMEOUT" ] &&
+      die "Strata did not report loaded within ${STRATA_START_TIMEOUT}s (STRATA_START_TIMEOUT); log: $STRATA_LOG"
+    if [ $((now - last)) -ge 10 ]; then
+      say "waiting for Strata to load... $((now - start))s (RAM available: $(meminfo_gib MemAvailable) GiB, swap free: $(meminfo_gib SwapFree) GiB)"
+      last="$now"
+    fi
+    sleep 2
+  done
+}
+
+# strata_ensure: make sure Strata answers with the model loaded, starting or loading it when needed.
+strata_ensure(){
+  local h
+  if h="$(strata_health)"; then
+    [ "$(json_field "$h" loaded)" = true ] && return 0
+    say "Strata is answering at $STRATA_URL but the model is unloaded; loading it"
+    strata_ram_check
+    curl -fsS --max-time "$STRATA_START_TIMEOUT" -X POST -H 'Content-Type: application/json' -d '{}' \
+      "$STRATA_URL/load" >/dev/null 2>&1 &
+    strata_wait ""
+    return 0
+  fi
+  [ -n "$STRATA_START_SCRIPT" ] || die "Strata is not answering at $STRATA_URL and STRATA_START_SCRIPT is not set"
+  [ -x "$STRATA_START_SCRIPT" ] || die "STRATA_START_SCRIPT is not executable: $STRATA_START_SCRIPT"
+  strata_ram_check
+  local cfg; cfg="$(strata_engine_config)" || exit 1
+  mkdir -p "$(dirname "$STRATA_LOG")"
+  say "starting Strata ($STRATA_SIZE${cfg:+, context $STRATA_MAX_CONTEXT}) with $STRATA_START_SCRIPT; log: $STRATA_LOG"
+  # Detached so it outlives this launcher and later sessions reuse it. The override config is passed as
+  # `--config <file>` and in STRATA_ENGINE_CONFIG; the start script must forward one of them to the server.
+  ( cd "${STRATA_DIR:-.}" && STRATA_ENGINE_CONFIG="$cfg" STRATA_SIZE="$STRATA_SIZE" exec setsid nohup "$STRATA_START_SCRIPT" \
+      ${cfg:+--config "$cfg"} >>"$STRATA_LOG" 2>&1 </dev/null ) &
+  local pid=$!
+  say "Strata pid $pid"
+  strata_wait "$pid"
+}
+
+base_env=(
+  ANTHROPIC_API_KEY=""
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+  CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-xhigh}"
+)
+
+case "$model" in
+  strata|strata:*|flashnext|flashnext:*)
+    : "${STRATA_URL:=http://127.0.0.1:8080}"
+    : "${STRATA_SIZE:=iq2_xs}"
+    case "$model" in *:*) STRATA_SIZE="${model#*:}" ;; esac
+    : "${STRATA_DIR:=}"
+    : "${STRATA_START_SCRIPT:=${STRATA_DIR:+$STRATA_DIR/run-$STRATA_SIZE.sh}}"
+    if [ -z "${STRATA_CONFIG:-}" ] && [ -n "$STRATA_DIR" ] && [ -r "$STRATA_DIR/strata-$STRATA_SIZE.json" ]; then
+      STRATA_CONFIG="$STRATA_DIR/strata-$STRATA_SIZE.json"   # Strata setup's per-quant engine JSON
+    fi
+    : "${STRATA_CONFIG:=}"
+    : "${STRATA_MAX_CONTEXT:=212992}"
+    : "${STRATA_CC_MAX_CONTEXT:=190000}"
+    : "${STRATA_MEM_FLOOR_GIB:=30}"
+    : "${STRATA_SWAP_FLOOR_GIB:=20}"
+    : "${STRATA_START_TIMEOUT:=900}"
+    : "${STRATA_LOG:=${XDG_STATE_HOME:-$HOME/.local/state}/small-model-skills/strata-$STRATA_SIZE.log}"
+    command -v curl >/dev/null 2>&1 || die "curl is needed for the Strata engine"
+    STRATA_URL="${STRATA_URL%/}"
+    strata_ensure
+    h="$(strata_health)" || die "Strata stopped answering at $STRATA_URL"
+    smodel="$(json_field "$h" model)"; smodel="${smodel:-strata}"
+    sctx="$(json_field "$h" max_context)"
+    cc_ctx="$STRATA_CC_MAX_CONTEXT"
+    # Keep Claude Code under what the running server actually allows (it may have been started elsewhere with a
+    # smaller window): at most 90% of the reported context, so autocompact fires before "Prompt is too long".
+    if [ -n "$sctx" ] && [ "$sctx" -gt 0 ] 2>/dev/null && [ "$cc_ctx" -gt $((sctx * 9 / 10)) ]; then
+      say "Strata reports a ${sctx}-token context; capping Claude Code at $((sctx * 9 / 10)) instead of $cc_ctx"
+      cc_ctx=$((sctx * 9 / 10))
+    fi
+    say "$smodel via Strata at $STRATA_URL (context ${sctx:-?}, Claude Code max $cc_ctx)${cc_env:+  (curated skills)}"
+    exec env \
+      ${cc_env[@]+"${cc_env[@]}"} \
+      "${base_env[@]}" \
+      ANTHROPIC_BASE_URL="$STRATA_URL" \
+      ANTHROPIC_AUTH_TOKEN="${STRATA_API_KEY:-strata}" \
+      ANTHROPIC_MODEL="$smodel" \
+      ANTHROPIC_SMALL_FAST_MODEL="$smodel" \
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS="$cc_ctx" \
+      claude --model "$smodel" "$@"
+    ;;
+esac
+
 echo "claude-local: $model${cc_env:+  (curated skills)}" >&2
 exec env \
   ${cc_env[@]+"${cc_env[@]}"} \
+  "${base_env[@]}" \
   ANTHROPIC_BASE_URL="http://localhost:11434" \
   ANTHROPIC_AUTH_TOKEN="ollama" \
-  ANTHROPIC_API_KEY="" \
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
   claude --model "$model" "$@"

@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`claude-local strata` engine** (alias `flashnext`) — runs Claude Code against a Strata server's
+  Anthropic-compatible endpoint. Starts Strata with `STRATA_START_SCRIPT` when it is not answering, gated on
+  `MemAvailable >= STRATA_MEM_FLOOR_GIB` (30) and `SwapFree >= STRATA_SWAP_FLOOR_GIB` (20), and waits up to
+  `STRATA_START_TIMEOUT` for `/health` to report loaded. `STRATA_CONFIG` + `STRATA_MAX_CONTEXT` (212992) start it
+  from a context-enlarged copy of the engine JSON; `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (190000) is capped to 90% of the
+  served window. Every engine now gets `CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless already set. Test:
+  `test/claude-local-strata-test.sh`.
 - **`sys-diag` expected-workload rule** (off by default) — on a build/CI host, heavy load from the work it is meant
   to run is no longer an alert. New keys `WORKLOAD_ROOTS` (directories) and `WORKLOAD_REGEX` (command-line regex)
   mark a CPU- or memory-heavy process as expected when it, or any ancestor, runs under a root or matches; when

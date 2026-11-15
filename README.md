@@ -173,10 +173,22 @@ your PATH by `install.sh`, step 3 below) does the env-var wiring for you:
 ```bash
 claude-local                # uses LOCAL_MODEL_DEFAULT from config (qwen3-coder-cc)
 claude-local qwen3-coder-cc # or name any Ollama model tag to use it
+claude-local strata         # or the Strata engine (see below)
 claude-local llama3.3:70b   # a 70B is a real resource risk — no shortcut, pass the full tag on purpose
 ```
 Your normal `claude` is untouched; `claude-local` uses the offline model. The default model lives in
 `~/.config/small-model-skills/config` (`LOCAL_MODEL_DEFAULT`), not hardcoded in the script.
+
+**A bigger model on Strata.** `claude-local strata` (alias `flashnext`) points Claude Code at a
+[Strata](https://github.com/Niko1221/Strata) server's own Anthropic endpoint instead of Ollama — for a large quantized MoE such
+as Qwen Flash-Next that does not fit Ollama's path. If Strata is not answering, `claude-local` starts it with
+`STRATA_START_SCRIPT`, but only when both `MemAvailable` and `SwapFree` are above their floors
+(`STRATA_MEM_FLOOR_GIB`, `STRATA_SWAP_FLOOR_GIB`; it never stops anything to make room), then waits (bounded,
+with progress) for `/health` to report the model loaded. `STRATA_CONFIG` + `STRATA_MAX_CONTEXT` start it with a
+larger window from a copy of the engine JSON, and `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is set below the window the
+server reports so autocompact runs before "Prompt is too long". Set `LOCAL_MODEL_DEFAULT=strata` to make it the
+default; every key is in [`config.example`](config.example). Every engine runs with
+`CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless you set it yourself.
 
 By default `claude-local` also runs in **curated-skills mode**: it points `CLAUDE_CONFIG_DIR` at a config
 home (built by `install.sh`, step 3) that exposes **only this repo's skills**, giving a small model a
