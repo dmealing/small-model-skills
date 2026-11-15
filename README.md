@@ -173,10 +173,29 @@ your PATH by `install.sh`, step 3 below) does the env-var wiring for you:
 ```bash
 claude-local                # uses LOCAL_MODEL_DEFAULT from config (qwen3-coder-cc)
 claude-local qwen3-coder-cc # or name any Ollama model tag to use it
+claude-local strata         # or the Strata engine (see below)
 claude-local llama3.3:70b   # a 70B is a real resource risk — no shortcut, pass the full tag on purpose
 ```
 Your normal `claude` is untouched; `claude-local` uses the offline model. The default model lives in
 `~/.config/small-model-skills/config` (`LOCAL_MODEL_DEFAULT`), not hardcoded in the script.
+
+**A bigger model on Strata.** `claude-local strata` (alias `flashnext`) points Claude Code at a
+[Strata](https://github.com/Niko1221/Strata) server's own Anthropic endpoint instead of Ollama — for a large quantized MoE such
+as Qwen Flash-Next that does not fit Ollama's path. If Strata is not answering, `claude-local` starts it with
+`STRATA_START_SCRIPT`, but only when both `MemAvailable` and `SwapFree` are above their floors
+(`STRATA_MEM_FLOOR_GIB`, `STRATA_SWAP_FLOOR_GIB`; it never stops anything to make room), then waits (bounded,
+with progress) for `/health` to report the model loaded. `STRATA_CONFIG` + `STRATA_MAX_CONTEXT` start it with a
+larger window from a copy of the engine JSON, and `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is set below the window the
+server reports so autocompact runs before "Prompt is too long". Set `LOCAL_MODEL_DEFAULT=strata` to make it the
+default; every key is in [`config.example`](config.example). Every engine runs with
+`CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless you set it yourself, and points every model slot Claude Code uses
+(small/fast, haiku/sonnet/opus, subagents) at the local model.
+
+**Other local servers and short names.** Any other server with an Anthropic-compatible endpoint (a
+`llama-server`, a tool-name proxy) can be added as a named engine with `LOCAL_ENGINES` and `ENGINE_<name>_*`
+keys: its URL, health URLs, a start command run when it is down, and its context/output caps. Short names for
+any target go in `LOCAL_MODEL_ALIASES` (e.g. `coder=qwen3-coder-cc`). For Ollama, `LOCAL_CC_MAX_CONTEXT` keeps
+Claude Code below the model's `num_ctx`.
 
 By default `claude-local` also runs in **curated-skills mode**: it points `CLAUDE_CONFIG_DIR` at a config
 home (built by `install.sh`, step 3) that exposes **only this repo's skills**, giving a small model a
@@ -242,8 +261,9 @@ place — consistent with the propose-don't-apply model (see [`SECURITY.md`](SEC
 
 ### 6. (optional) Ambient system-health context at session start
 `claude-hooks/session-start-ambient-context.sh` runs `sys-diag` and surfaces the result as context the
-moment a `claude-local` session starts — so the model already has real load/memory facts before you ask
-anything, working around small models' unreliable skill auto-triggering. It's a no-op for normal (cloud)
+moment an Ollama-backed `claude-local` session starts — so the model already has real load/memory facts
+before you ask anything, working around small models' unreliable skill auto-triggering. (Strata and other
+engine sessions use a different `ANTHROPIC_BASE_URL` and are not detected.) It's a no-op for normal (cloud)
 Claude Code sessions (checks `ANTHROPIC_BASE_URL` first), but touches your global
 `~/.claude/settings.json`, so `install.sh` does **not** wire it in automatically — add it yourself:
 ```json

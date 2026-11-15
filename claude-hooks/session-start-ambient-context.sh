@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # session-start-ambient-context.sh — Claude Code SessionStart hook.
 #
-# Surfaces a quick sys-diag health digest as ambient context, but ONLY for local-model sessions
-# (detected via ANTHROPIC_BASE_URL pointing at the local Ollama endpoint claude-local sets up).
+# Surfaces a quick sys-diag health digest as ambient context, but ONLY for Ollama-backed local sessions
+# (detected via ANTHROPIC_BASE_URL pointing at the local Ollama endpoint claude-local's Ollama path sets
+# up; Strata and LOCAL_ENGINES sessions use a different URL and are not detected).
 # For every normal (cloud) Claude Code session this is a single case-statement match, then exit —
 # effectively zero overhead; it never touches other users' sessions.
 #
@@ -22,7 +23,7 @@ set -uo pipefail
 
 case "${ANTHROPIC_BASE_URL:-}" in
   http://localhost:11434*|http://127.0.0.1:11434*) ;;
-  *) exit 0 ;;  # not a local-model session (claude-local always sets this) — no-op
+  *) exit 0 ;;  # not an Ollama-backed claude-local session — no-op
 esac
 
 command -v sys-diag >/dev/null 2>&1 || exit 0
