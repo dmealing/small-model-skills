@@ -40,6 +40,14 @@ LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any ca
 # your full ~/.claude config instead. See docs/tuning-local-models.md.
 # SMOLS_CURATED_SKILLS=0
 
+# Ollama tuning for claude-local (blank = Claude Code's defaults):
+# LOCAL_CC_MAX_CONTEXT=60000        # CLAUDE_CODE_MAX_CONTEXT_TOKENS; keep it BELOW the model's num_ctx or Ollama
+#                                   #   silently left-truncates the prompt
+# LOCAL_MAX_OUTPUT_TOKENS=          # CLAUDE_CODE_MAX_OUTPUT_TOKENS
+# LOCAL_SMALL_MODEL=                # model for Claude Code's small/fast (haiku) slot (blank = the main model)
+# Short names: `claude-local <name>` -> its target (an Ollama tag, strata[:size], or a LOCAL_ENGINES name).
+# LOCAL_MODEL_ALIASES="coder=qwen3-coder-cc big=strata:iq3_s"
+
 # --- Strata engine (`claude-local strata`, alias `flashnext`) ---
 # Strata serves a big MoE model (e.g. a quantized Qwen Flash-Next) with its own Anthropic-compatible
 # endpoint. Set LOCAL_MODEL_DEFAULT=strata to make it the default. All values are machine-specific.
@@ -54,11 +62,26 @@ LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any ca
 #                                   #   when it exists, else none: the script's own config is used as-is)
 # STRATA_MAX_CONTEXT=212992         # --max-context written into that copy (the shared JSON is never edited)
 # STRATA_CC_MAX_CONTEXT=190000      # CLAUDE_CODE_MAX_CONTEXT_TOKENS; capped to 90% of what Strata reports
-# STRATA_MEM_FLOOR_GIB=30           # refuse to start/load unless MemAvailable >= this ...
-# STRATA_SWAP_FLOOR_GIB=20          # ... AND SwapFree >= this (idle sessions may be pushed to swap during load)
+# STRATA_MEM_FLOOR_GIB=24           # refuse to start/load unless MemAvailable >= this ...
+# STRATA_SWAP_FLOOR_GIB=12          # ... AND SwapFree >= this (idle sessions may be pushed to swap during load)
 # STRATA_START_TIMEOUT=900          # seconds to wait for /health to report loaded
 # STRATA_LOG=                       # server output (blank = $XDG_STATE_HOME/small-model-skills/strata-<size>.log)
 # STRATA_API_KEY=                   # only if the server was started with an API key
+# STRATA_MAX_OUTPUT_TOKENS=         # CLAUDE_CODE_MAX_OUTPUT_TOKENS for Strata (blank = Claude Code's default)
+
+# --- Endpoint engines (`claude-local <name>`) ---
+# Any other server with an Anthropic-compatible endpoint (llama-server, a tool-name proxy, ...). List the names,
+# then describe each with ENGINE_<name>_* keys (name: letters, digits, _). Example values only:
+# LOCAL_ENGINES="myengine"
+# ENGINE_myengine_URL=http://127.0.0.1:8090        # ANTHROPIC_BASE_URL for Claude Code (required)
+# ENGINE_myengine_HEALTH="http://127.0.0.1:8090/health"  # space-separated URLs that must all answer (blank = URL)
+# ENGINE_myengine_START="$HOME/bin/start-myengine.sh"   # run via bash -c when a health URL does not answer
+# ENGINE_myengine_START_TIMEOUT=300                # seconds to wait for the health URLs after START
+# ENGINE_myengine_MODEL=my-model                   # model name sent (blank = the engine name)
+# ENGINE_myengine_CTX=190000                       # CLAUDE_CODE_MAX_CONTEXT_TOKENS (keep below the server's window)
+# ENGINE_myengine_MAX_OUT=16000                    # CLAUDE_CODE_MAX_OUTPUT_TOKENS
+# ENGINE_myengine_ENV="CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000"   # extra VAR=value words for the claude process
+# ENGINE_myengine_TOKEN=                           # ANTHROPIC_AUTH_TOKEN (blank = "local")
 
 # --- Diagnostics tuning (ollama-doctor / runaway-hunter / freeze-forensics) ---
 OLLAMA_URL=http://localhost:11434   # ollama-doctor: local Ollama API base URL

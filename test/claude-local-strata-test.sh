@@ -16,7 +16,7 @@ trap cleanup EXIT
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/claude" <<'EOF'
 #!/usr/bin/env bash
-env | grep -E '^(ANTHROPIC_BASE_URL|ANTHROPIC_MODEL|CLAUDE_CODE_EFFORT_LEVEL|CLAUDE_CODE_MAX_CONTEXT_TOKENS)=' | sort
+env | grep -E '^(ANTHROPIC_[A-Z_]*MODEL|ANTHROPIC_BASE_URL|CLAUDE_CODE_EFFORT_LEVEL|CLAUDE_CODE_MAX_[A-Z_]+|CLAUDE_CODE_SUBAGENT_MODEL|CLAUDE_STREAM_IDLE_TIMEOUT_MS)=' | sort
 echo "ARGS=$*"
 EOF
 chmod +x "$TMP/bin/claude"
@@ -55,7 +55,17 @@ echo "claude-local engines"
 out="$(run "$CL" qwen3-coder-cc -p hi)"
 check "ollama tag keeps the Ollama endpoint" '^ANTHROPIC_BASE_URL=http://localhost:11434$' "$out"
 check "ollama tag gets effort xhigh" '^CLAUDE_CODE_EFFORT_LEVEL=xhigh$' "$out"
-check "ollama tag passes the claude args" '^ARGS=--model qwen3-coder-cc -p hi$' "$out"
+check "ollama tag passes the claude args" '^ARGS=--settings .*--model qwen3-coder-cc -p hi$' "$out"
+check "subagents use the local model" '^ARGS=--settings \{"env":\{"CLAUDE_CODE_SUBAGENT_MODEL":"qwen3-coder-cc"\}\}' "$out"
+check "the opus slot points at the local model" '^ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3-coder-cc$' "$out"
+out="$(run env LOCAL_CC_MAX_CONTEXT=60000 LOCAL_MAX_OUTPUT_TOKENS=64000 LOCAL_SMALL_MODEL=tiny "$CL")"
+check "ollama context cap from config" '^CLAUDE_CODE_MAX_CONTEXT_TOKENS=60000$' "$out"
+check "ollama output cap from config" '^CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000$' "$out"
+check "ollama small model from config" '^ANTHROPIC_SMALL_FAST_MODEL=tiny$' "$out"
+out="$(run env LOCAL_MODEL_ALIASES="tc=thinkingcap-27b-local sw=swift15-27b-local" "$CL" sw)"
+check "an alias resolves to its Ollama tag" '^ANTHROPIC_MODEL=swift15-27b-local$' "$out"
+out="$(run env LOCAL_MODEL_ALIASES="tc=thinkingcap-27b-local" "$CL" tcx)"
+check "a non-alias tag is left alone" '^ANTHROPIC_MODEL=tcx$' "$out"
 
 P="$(free_port)"; python3 -I "$TMP/stub-strata.py" --port "$P" --ctx 212992 & pids+=($!); wait_up "$P"
 out="$(run env STRATA_URL="http://127.0.0.1:$P" "$CL" strata)"
@@ -64,7 +74,7 @@ check "strata uses the model Strata reports" '^ANTHROPIC_MODEL=flash-test$' "$ou
 check "strata sets the Claude Code context" '^CLAUDE_CODE_MAX_CONTEXT_TOKENS=190000$' "$out"
 check "strata gets effort xhigh" '^CLAUDE_CODE_EFFORT_LEVEL=xhigh$' "$out"
 out="$(run env STRATA_URL="http://127.0.0.1:$P" LOCAL_MODEL_DEFAULT=flashnext "$CL" -p hi)"
-check "LOCAL_MODEL_DEFAULT=flashnext selects Strata" '^ARGS=--model flash-test -p hi$' "$out"
+check "LOCAL_MODEL_DEFAULT=flashnext selects Strata" '^ARGS=--settings .*--model flash-test -p hi$' "$out"
 kill "${pids[-1]}"
 
 P="$(free_port)"; python3 -I "$TMP/stub-strata.py" --port "$P" --ctx 65536 & pids+=($!); wait_up "$P"
@@ -81,10 +91,10 @@ EOF
 chmod +x "$TMP/start.sh"
 out="$(run env STRATA_URL="http://127.0.0.1:$P" STRATA_START_SCRIPT="$TMP/start.sh" STRATA_CONFIG="$TMP/shared.json" \
   SMOLS_MEMINFO="$TMP/meminfo-low" "$CL" strata)"; rc=$?
-check "low RAM refuses naming both numbers" 'not starting Strata \(iq2_xs\): 20 GiB RAM available \(need 30, STRATA_MEM_FLOOR_GIB\) and 37 GiB swap free \(need 20' "$out"
+check "low RAM refuses naming both numbers" 'not starting Strata \(iq2_xs\): 20 GiB RAM available \(need 24, STRATA_MEM_FLOOR_GIB\) and 37 GiB swap free \(need 12' "$out"
 check "low RAM exits non-zero" '^1$' "$rc"
 out="$(run env STRATA_URL="http://127.0.0.1:$P" STRATA_START_SCRIPT="$TMP/start.sh" SMOLS_MEMINFO="$TMP/meminfo-noswap" "$CL" strata)"; rc=$?
-check "low swap refuses too" '10 GiB swap free \(need 20, STRATA_SWAP_FLOOR_GIB\)' "$out"
+check "low swap refuses too" '10 GiB swap free \(need 12, STRATA_SWAP_FLOOR_GIB\)' "$out"
 check "low swap exits non-zero" '^1$' "$rc"
 check "a refusal never runs the start script" '^absent$' "$([ -e "$TMP/started" ] && echo present || echo absent)"
 
@@ -103,6 +113,24 @@ check "a dead start exits non-zero" '^1$' "$rc"
 
 out="$(run env STRATA_URL="http://127.0.0.1:$(free_port)" "$CL" strata)"; rc=$?
 check "no start script configured is a clear error" 'STRATA_START_SCRIPT is not set' "$out"
+
+P="$(free_port)"
+eng(){ run env LOCAL_ENGINES="fl other" ENGINE_fl_URL="http://127.0.0.1:$P" ENGINE_fl_HEALTH="http://127.0.0.1:$P/health" \
+  ENGINE_fl_MODEL=flint-test ENGINE_fl_CTX=190000 ENGINE_fl_MAX_OUT=16000 ENGINE_fl_ENV="CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000" \
+  ENGINE_fl_START_TIMEOUT=20 "$@"; }
+out="$(eng ENGINE_fl_START= "$CL" fl)"
+check "an endpoint engine that is down with no start command is a clear error" 'ENGINE_fl_START is not set' "$out"
+out="$(eng ENGINE_fl_START="echo go >> '$TMP/fl-started'; nohup python3 -I '$TMP/stub-strata.py' --port $P >/dev/null 2>&1 &" "$CL" fl)"
+check "an endpoint engine runs its start command when down" '^go$' "$(cat "$TMP/fl-started" 2>/dev/null)"
+check "an endpoint engine points Claude Code at its URL" "^ANTHROPIC_BASE_URL=http://127.0.0.1:$P\$" "$out"
+check "an endpoint engine uses its model" '^ANTHROPIC_MODEL=flint-test$' "$out"
+check "an endpoint engine sets its context" '^CLAUDE_CODE_MAX_CONTEXT_TOKENS=190000$' "$out"
+check "an endpoint engine sets its output cap" '^CLAUDE_CODE_MAX_OUTPUT_TOKENS=16000$' "$out"
+check "an endpoint engine passes its extra env" '^CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000$' "$out"
+check "an endpoint engine gets effort xhigh" '^CLAUDE_CODE_EFFORT_LEVEL=xhigh$' "$out"
+out="$(eng ENGINE_fl_START="echo again >> '$TMP/fl-started'" "$CL" fl)"
+check "an endpoint engine that is up is not started again" '^go$' "$(cat "$TMP/fl-started")"
+pkill -f "$TMP/stub-strata.py --port $P" 2>/dev/null
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

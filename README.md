@@ -188,7 +188,14 @@ with progress) for `/health` to report the model loaded. `STRATA_CONFIG` + `STRA
 larger window from a copy of the engine JSON, and `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is set below the window the
 server reports so autocompact runs before "Prompt is too long". Set `LOCAL_MODEL_DEFAULT=strata` to make it the
 default; every key is in [`config.example`](config.example). Every engine runs with
-`CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless you set it yourself.
+`CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless you set it yourself, and points every model slot Claude Code uses
+(small/fast, haiku/sonnet/opus, subagents) at the local model.
+
+**Other local servers and short names.** Any other server with an Anthropic-compatible endpoint (a
+`llama-server`, a tool-name proxy) can be added as a named engine with `LOCAL_ENGINES` and `ENGINE_<name>_*`
+keys: its URL, health URLs, a start command run when it is down, and its context/output caps. Short names for
+any target go in `LOCAL_MODEL_ALIASES` (e.g. `coder=qwen3-coder-cc`). For Ollama, `LOCAL_CC_MAX_CONTEXT` keeps
+Claude Code below the model's `num_ctx`.
 
 By default `claude-local` also runs in **curated-skills mode**: it points `CLAUDE_CONFIG_DIR` at a config
 home (built by `install.sh`, step 3) that exposes **only this repo's skills**, giving a small model a

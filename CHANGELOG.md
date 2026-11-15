@@ -9,11 +9,16 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 - **`claude-local strata` engine** (alias `flashnext`) — runs Claude Code against a Strata server's
   Anthropic-compatible endpoint. Starts Strata with `STRATA_START_SCRIPT` when it is not answering, gated on
-  `MemAvailable >= STRATA_MEM_FLOOR_GIB` (30) and `SwapFree >= STRATA_SWAP_FLOOR_GIB` (20), and waits up to
+  `MemAvailable >= STRATA_MEM_FLOOR_GIB` (24) and `SwapFree >= STRATA_SWAP_FLOOR_GIB` (12), and waits up to
   `STRATA_START_TIMEOUT` for `/health` to report loaded. `STRATA_CONFIG` + `STRATA_MAX_CONTEXT` (212992) start it
   from a context-enlarged copy of the engine JSON; `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (190000) is capped to 90% of the
-  served window. Every engine now gets `CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless already set. Test:
+  served window. Every engine now gets `CLAUDE_CODE_EFFORT_LEVEL=xhigh` unless already set, and every Claude Code
+  model slot (small/fast, haiku/sonnet/opus defaults, subagents) points at the local model. Test:
   `test/claude-local-strata-test.sh`.
+- **`claude-local` endpoint engines and aliases** — `LOCAL_ENGINES` + `ENGINE_<name>_*` keys add any other
+  Anthropic-compatible local server (URL, health URLs, start command, context/output caps, extra env);
+  `LOCAL_MODEL_ALIASES` maps short names to a tag or engine. Ollama gains optional `LOCAL_CC_MAX_CONTEXT`,
+  `LOCAL_MAX_OUTPUT_TOKENS` and `LOCAL_SMALL_MODEL`.
 - **`sys-diag` expected-workload rule** (off by default) — on a build/CI host, heavy load from the work it is meant
   to run is no longer an alert. New keys `WORKLOAD_ROOTS` (directories) and `WORKLOAD_REGEX` (command-line regex)
   mark a CPU- or memory-heavy process as expected when it, or any ancestor, runs under a root or matches; when

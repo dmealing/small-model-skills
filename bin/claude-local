@@ -147,11 +147,67 @@ strata_ensure(){
   strata_wait "$pid"
 }
 
-base_env=(
-  ANTHROPIC_API_KEY=""
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-  CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-xhigh}"
-)
+# launch <base url> <auth token> <model> <small model> <claude-code context or ""> <max output or ""> [VAR=value...] -- <claude args>
+# Every model slot (main, small/fast, haiku/sonnet/opus aliases, subagents) points at the local model, so nothing
+# asks the local server for a Claude model name. The subagent model goes through --settings because a
+# settings.json env block outranks an ambient variable.
+launch(){
+  local url="$1" token="$2" m="$3" small="$4" ctx="$5" out="$6"; shift 6
+  local extra=()
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do extra+=("$1"); shift; done
+  [ "${1:-}" = -- ] && shift
+  [ -n "$ctx" ] && extra+=(CLAUDE_CODE_MAX_CONTEXT_TOKENS="$ctx")
+  [ -n "$out" ] && extra+=(CLAUDE_CODE_MAX_OUTPUT_TOKENS="$out")
+  exec env \
+    ${cc_env[@]+"${cc_env[@]}"} \
+    ANTHROPIC_API_KEY="" \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-xhigh}" \
+    ANTHROPIC_BASE_URL="$url" \
+    ANTHROPIC_AUTH_TOKEN="$token" \
+    ANTHROPIC_MODEL="$m" \
+    ANTHROPIC_SMALL_FAST_MODEL="$small" \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL="$small" \
+    ANTHROPIC_DEFAULT_SONNET_MODEL="$m" \
+    ANTHROPIC_DEFAULT_OPUS_MODEL="$m" \
+    CLAUDE_CODE_SUBAGENT_MODEL="$m" \
+    ${extra[@]+"${extra[@]}"} \
+    claude --settings "{\"env\":{\"CLAUDE_CODE_SUBAGENT_MODEL\":\"$m\"}}" --model "$m" "$@"
+}
+
+# Short names from config: LOCAL_MODEL_ALIASES="thinkingcap=thinkingcap-27b-local fast=strata:iq2_xs".
+for pair in ${LOCAL_MODEL_ALIASES:-}; do
+  [ "$model" = "${pair%%=*}" ] && { model="${pair#*=}"; break; }
+done
+
+# --- Configured endpoint engines (LOCAL_ENGINES) ---------------------------------------------------------
+# Any server with an Anthropic-compatible endpoint (llama-server, a tool-name proxy, ...), named in
+# LOCAL_ENGINES and described by ENGINE_<name>_* keys (see config.example). When one of its health URLs does not
+# answer, ENGINE_<name>_START is run (bash -c) and claude-local waits for all of them.
+endpoint_up(){ local u; for u in $1; do curl -s -o /dev/null --max-time 2 "$u" || return 1; done; }
+for name in ${LOCAL_ENGINES:-}; do
+  [ "$model" = "$name" ] || continue
+  case "$name" in *[!A-Za-z0-9_]*) die "LOCAL_ENGINES name '$name' must be letters, digits or _" ;; esac
+  ev(){ local v="ENGINE_${name}_$1"; printf '%s' "${!v:-}"; }
+  url="$(ev URL)"; [ -n "$url" ] || die "ENGINE_${name}_URL is not set"
+  health="$(ev HEALTH)"; health="${health:-$url}"
+  command -v curl >/dev/null 2>&1 || die "curl is needed for the $name engine"
+  if ! endpoint_up "$health"; then
+    start="$(ev START)"; [ -n "$start" ] || die "$name is not answering ($health) and ENGINE_${name}_START is not set"
+    say "starting $name: $start"
+    bash -c "$start" >&2 || die "ENGINE_${name}_START failed"
+    timeout_s="$(ev START_TIMEOUT)"; timeout_s="${timeout_s:-300}"; t0="$(date +%s)"
+    until endpoint_up "$health"; do
+      [ $(( $(date +%s) - t0 )) -ge "$timeout_s" ] && die "$name did not answer ($health) within ${timeout_s}s"
+      sleep 2
+    done
+  fi
+  m="$(ev MODEL)"; m="${m:-$name}"
+  # shellcheck disable=SC2207  # ENGINE_<name>_ENV is a space-separated list of VAR=value words
+  eenv=($(ev ENV))
+  say "$m via $name at $url${cc_env:+  (curated skills)}"
+  launch "$url" "$(ev TOKEN | sed 's/^$/local/')" "$m" "$m" "$(ev CTX)" "$(ev MAX_OUT)" ${eenv[@]+"${eenv[@]}"} -- "$@"
+done
 
 case "$model" in
   strata|strata:*|flashnext|flashnext:*)
@@ -166,8 +222,8 @@ case "$model" in
     : "${STRATA_CONFIG:=}"
     : "${STRATA_MAX_CONTEXT:=212992}"
     : "${STRATA_CC_MAX_CONTEXT:=190000}"
-    : "${STRATA_MEM_FLOOR_GIB:=30}"
-    : "${STRATA_SWAP_FLOOR_GIB:=20}"
+    : "${STRATA_MEM_FLOOR_GIB:=24}"
+    : "${STRATA_SWAP_FLOOR_GIB:=12}"
     : "${STRATA_START_TIMEOUT:=900}"
     : "${STRATA_LOG:=${XDG_STATE_HOME:-$HOME/.local/state}/small-model-skills/strata-$STRATA_SIZE.log}"
     command -v curl >/dev/null 2>&1 || die "curl is needed for the Strata engine"
@@ -184,24 +240,12 @@ case "$model" in
       cc_ctx=$((sctx * 9 / 10))
     fi
     say "$smodel via Strata at $STRATA_URL (context ${sctx:-?}, Claude Code max $cc_ctx)${cc_env:+  (curated skills)}"
-    exec env \
-      ${cc_env[@]+"${cc_env[@]}"} \
-      "${base_env[@]}" \
-      ANTHROPIC_BASE_URL="$STRATA_URL" \
-      ANTHROPIC_AUTH_TOKEN="${STRATA_API_KEY:-strata}" \
-      ANTHROPIC_MODEL="$smodel" \
-      ANTHROPIC_SMALL_FAST_MODEL="$smodel" \
-      CLAUDE_CODE_MAX_CONTEXT_TOKENS="$cc_ctx" \
-      claude --model "$smodel" "$@"
+    launch "$STRATA_URL" "${STRATA_API_KEY:-strata}" "$smodel" "$smodel" "$cc_ctx" "${STRATA_MAX_OUTPUT_TOKENS:-}" -- "$@"
     ;;
 esac
 
+# --- Ollama (any other tag) ----------------------------------------------------------------------------------
+# LOCAL_CC_MAX_CONTEXT must stay BELOW the model's num_ctx, or Ollama silently left-truncates the prompt.
 echo "claude-local: $model${cc_env:+  (curated skills)}" >&2
-exec env \
-  ${cc_env[@]+"${cc_env[@]}"} \
-  "${base_env[@]}" \
-  ANTHROPIC_BASE_URL="http://localhost:11434" \
-  ANTHROPIC_AUTH_TOKEN="ollama" \
-  ANTHROPIC_MODEL="$model" \
-  ANTHROPIC_SMALL_FAST_MODEL="$model" \
-  claude --model "$model" "$@"
+launch "${OLLAMA_URL:-http://localhost:11434}" ollama "$model" "${LOCAL_SMALL_MODEL:-$model}" \
+  "${LOCAL_CC_MAX_CONTEXT:-}" "${LOCAL_MAX_OUTPUT_TOKENS:-}" -- "$@"
