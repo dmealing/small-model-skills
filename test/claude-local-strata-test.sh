@@ -2,7 +2,7 @@
 # claude-local engine test — runs bin/claude-local against a stub `claude` (prints its env) and a stub Strata
 # /health server. Covers: an Ollama tag, Strata already loaded, the context cap, the low-RAM refusal (start
 # script never runs), a cold start through the start script with the context override, a start that dies, and
-# an answering-but-unloaded Strata (load ok, load refused, low RAM refuses the load).
+# an answering-but-unloaded Strata (load ok, load refused, load never answers, low RAM refuses the load).
 # No real model, no network beyond 127.0.0.1; every process it starts is stopped on exit.
 set -uo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
