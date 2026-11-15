@@ -113,8 +113,10 @@ strata_wait(){
       loadpid=""
       if [ "$lrc" -eq 28 ]; then
         die "Strata did not report loaded within ${STRATA_START_TIMEOUT}s (STRATA_START_TIMEOUT); log: $STRATA_LOG"
-      elif [ "$lrc" -ne 0 ]; then
+      elif [ "$lrc" -eq 22 ]; then
         die "Strata refused the model load (POST $STRATA_URL/load failed); log: $STRATA_LOG"
+      elif [ "$lrc" -ne 0 ]; then
+        die "Strata load request failed (POST $STRATA_URL/load); log: $STRATA_LOG"
       fi
     fi
     now="$(date +%s)"
