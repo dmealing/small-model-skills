@@ -129,7 +129,7 @@ P="$(free_port)"; python3 -I "$TMP/stub-strata.py" --port "$P" --delay 100 --loa
 out="$(run env STRATA_URL="http://127.0.0.1:$P" SMOLS_MEMINFO="$TMP/meminfo-low" "$CL" strata)"; rc=$?
 check "low RAM refuses to load an answering Strata" 'not loading the Strata model \(iq2_xs\)' "$out"
 check "a refused load exits non-zero" '^1$' "$rc"
-out="$(run env STRATA_URL="http://127.0.0.1:$P" "$CL" strata)"; rc=$?
+out="$(run env STRATA_URL="http://127.0.0.1:$P" STRATA_START_TIMEOUT=10 "$CL" strata)"; rc=$?
 check "a failed load request fails fast" 'refused the model load' "$out"
 check "a failed load exits non-zero" '^1$' "$rc"
 kill "${pids[-1]}"
