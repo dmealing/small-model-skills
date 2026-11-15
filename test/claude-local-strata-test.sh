@@ -36,9 +36,11 @@ class H(http.server.BaseHTTPRequestHandler):
                            "service": "strata"}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
     def do_POST(self):
-        # /load fails when started with --load-fail; otherwise it succeeds and --delay still gates "loaded".
+        # /load fails when started with --load-fail, never answers with --load-hang; otherwise it succeeds
+        # and --delay still gates "loaded".
+        if self.path == "/load" and "--load-hang" in a: time.sleep(60)
         self.send_response(500 if (self.path == "/load" and "--load-fail" in a) else 200); self.end_headers()
-http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
 EOF
 free_port(){ python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 wait_up(){ for _ in $(seq 50); do curl -fs "http://127.0.0.1:$1/health" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
@@ -132,6 +134,12 @@ check "a refused load exits non-zero" '^1$' "$rc"
 out="$(run env STRATA_URL="http://127.0.0.1:$P" STRATA_START_TIMEOUT=10 "$CL" strata)"; rc=$?
 check "a failed load request fails fast" 'refused the model load' "$out"
 check "a failed load exits non-zero" '^1$' "$rc"
+kill "${pids[-1]}"
+
+P="$(free_port)"; python3 -I "$TMP/stub-strata.py" --port "$P" --delay 100 --load-hang & pids+=($!); wait_up "$P"
+out="$(run env STRATA_URL="http://127.0.0.1:$P" STRATA_START_TIMEOUT=3 "$CL" strata)"; rc=$?
+check "a load that never answers reports the timeout, not a refusal" 'did not report loaded within 3s' "$out"
+check "a hanging load exits non-zero" '^1$' "$rc"
 kill "${pids[-1]}"
 
 P="$(free_port)"
