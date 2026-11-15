@@ -158,9 +158,10 @@ these wrappers are read-only single-shot snapshots, not stateful list/mutate res
 
 **AXI session-hook ambient context** (`claude-hooks/session-start-ambient-context.sh`) — originally
 scoped as a separate follow-on (see the design spec), now built: a Claude Code `SessionStart` hook that
-runs `sys-diag` and injects its digest as ambient context, but *only* for local-model sessions (detected
-by `ANTHROPIC_BASE_URL` pointing at the local Ollama endpoint `claude-local` sets — a single string
-comparison, so it's a genuine no-op for every normal cloud Claude Code session). Addresses this project's
+runs `sys-diag` and injects its digest as ambient context, but *only* for Ollama-backed local sessions
+(detected by `ANTHROPIC_BASE_URL` pointing at the local Ollama endpoint `claude-local` sets — a single
+string comparison, so it's a genuine no-op for every normal cloud Claude Code session; Strata and
+`LOCAL_ENGINES` sessions use a different URL and are not detected). Addresses this project's
 own documented weakness: small models don't reliably auto-trigger a skill from a vague prompt, so surfacing
 the health digest up front means the model already has the facts without needing "use system-triage" said
 explicitly. Not wired into `~/.claude/settings.json` by `install.sh` automatically — that's a global file
@@ -169,11 +170,14 @@ README's Setup section), not something an installer silently does to your global
 
 ## Local model launcher
 
-`bin/claude-local [<ollama model tag>]` — one launcher, config-driven
+`bin/claude-local [<engine or ollama model tag>]` — one launcher, config-driven
 (`LOCAL_MODEL_DEFAULT` in `config.example`, `qwen3-coder-cc`), replacing near-duplicate shell functions.
-Deliberately has **no short alias for a 70B+ model** — picking one requires spelling out the full Ollama tag
-(`claude-local llama3.3:70b`), not a single memorable word, because loading a model that size is a real
-resource commitment on a laptop (it's taken this machine down before).
+Besides Ollama tags it runs named engines: `strata` (alias `flashnext`) on a Strata server's own
+Anthropic endpoint, and any `LOCAL_ENGINES` endpoint — keys and usage in `config.example` and the
+README. Deliberately has **no short alias for a 70B+ Ollama load** — picking one requires spelling out
+the full Ollama tag (`claude-local llama3.3:70b`), not a single memorable word, because loading a model
+that size is a real resource commitment on a laptop (it's taken this machine down before); the Strata
+alias is the gated exception, refused unless `MemAvailable`/`SwapFree` clear their floors.
 
 By default it also runs **curated-skills mode**: `CLAUDE_CONFIG_DIR` is repointed at a config home
 (`install.sh`-built) exposing only this repo's skills, trading away the global `~/.claude` context

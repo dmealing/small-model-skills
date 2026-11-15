@@ -261,8 +261,9 @@ place — consistent with the propose-don't-apply model (see [`SECURITY.md`](SEC
 
 ### 6. (optional) Ambient system-health context at session start
 `claude-hooks/session-start-ambient-context.sh` runs `sys-diag` and surfaces the result as context the
-moment a `claude-local` session starts — so the model already has real load/memory facts before you ask
-anything, working around small models' unreliable skill auto-triggering. It's a no-op for normal (cloud)
+moment an Ollama-backed `claude-local` session starts — so the model already has real load/memory facts
+before you ask anything, working around small models' unreliable skill auto-triggering. (Strata and other
+engine sessions use a different `ANTHROPIC_BASE_URL` and are not detected.) It's a no-op for normal (cloud)
 Claude Code sessions (checks `ANTHROPIC_BASE_URL` first), but touches your global
 `~/.claude/settings.json`, so `install.sh` does **not** wire it in automatically — add it yourself:
 ```json
