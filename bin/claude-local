@@ -5,6 +5,7 @@
 #   strata  -> the Strata engine (alias: flashnext): Claude Code talks to Strata's own Anthropic endpoint.
 #              `strata:<size>` picks a quant other than STRATA_SIZE (e.g. `claude-local strata:iq3_s`).
 #              If Strata is not answering, it is started with STRATA_START_SCRIPT (after a free-RAM check).
+#              The script must exec the server and stay in the foreground: its pid is watched while Strata loads.
 #   any other tag -> used as the Ollama model (e.g. `claude-local qwen2.5-coder:14b`).
 # Any capable ~30B-class MoE coder model works on Ollama; qwen3-coder-cc is the tested default. A 70B local
 # load is a real resource risk, so there's no shortcut — pass the full tag explicitly if you want one.
@@ -58,11 +59,12 @@ meminfo_gib(){
 # sessions can be pushed to swap while it loads, so RAM alone need not cover it). Never frees memory itself.
 strata_ram_check(){
   local ram swap
+  local refuse="${1:-not starting Strata}"
   ram="$(meminfo_gib MemAvailable)"; swap="$(meminfo_gib SwapFree)"
   if [ -z "$ram" ]; then say "cannot read MemAvailable; skipping the free-memory check"; return 0; fi
   : "${swap:=0}"
   if [ "$ram" -lt "$STRATA_MEM_FLOOR_GIB" ] || [ "$swap" -lt "$STRATA_SWAP_FLOOR_GIB" ]; then
-    die "not starting Strata ($STRATA_SIZE): ${ram} GiB RAM available (need ${STRATA_MEM_FLOOR_GIB}," \
+    die "$refuse ($STRATA_SIZE): ${ram} GiB RAM available (need ${STRATA_MEM_FLOOR_GIB}," \
         "STRATA_MEM_FLOOR_GIB) and ${swap} GiB swap free (need ${STRATA_SWAP_FLOOR_GIB}, STRATA_SWAP_FLOOR_GIB)." \
         "Free some memory and try again; nothing was stopped."
   fi
@@ -98,12 +100,19 @@ PY
   echo "$out"
 }
 
-# strata_wait <pid or empty>: wait (bounded) for /health to report loaded, with progress on stderr.
+# strata_wait <pid or empty> <load-request pid or empty>: wait (bounded) for /health to report loaded, with
+# progress on stderr. Fails fast when the watched server pid dies, or when the /load request already failed.
 strata_wait(){
-  local pid="$1" start now last=0
+  local pid="$1" loadpid="${2:-}" start now last=0
   start="$(date +%s)"
   while :; do
     strata_loaded && { say "Strata is loaded ($(( $(date +%s) - start ))s)"; return 0; }
+    if [ -n "$loadpid" ] && ! kill -0 "$loadpid" 2>/dev/null; then
+      if ! wait "$loadpid" 2>/dev/null; then
+        die "Strata refused the model load (POST $STRATA_URL/load failed); log: $STRATA_LOG"
+      fi
+      loadpid=""
+    fi
     now="$(date +%s)"
     if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
       say "Strata exited before it finished loading; last lines of $STRATA_LOG:"
@@ -126,10 +135,10 @@ strata_ensure(){
   if h="$(strata_health)"; then
     [ "$(json_field "$h" loaded)" = true ] && return 0
     say "Strata is answering at $STRATA_URL but the model is unloaded; loading it"
-    strata_ram_check
+    strata_ram_check "not loading the Strata model"
     curl -fsS --max-time "$STRATA_START_TIMEOUT" -X POST -H 'Content-Type: application/json' -d '{}' \
       "$STRATA_URL/load" >/dev/null 2>&1 &
-    strata_wait ""
+    strata_wait "" "$!"
     return 0
   fi
   [ -n "$STRATA_START_SCRIPT" ] || die "Strata is not answering at $STRATA_URL and STRATA_START_SCRIPT is not set"

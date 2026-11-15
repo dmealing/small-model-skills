@@ -57,7 +57,9 @@ LOCAL_MODEL_DEFAULT=qwen3-coder-cc # model claude-local uses with no arg. Any ca
 # STRATA_START_SCRIPT=              # run when Strata is not answering (blank = $STRATA_DIR/run-$STRATA_SIZE.sh).
 #                                   #   It is passed `--config <override.json>` (also $STRATA_ENGINE_CONFIG) when
 #                                   #   there is a STRATA_CONFIG, and must forward it to the server. STRATA_SIZE is
-#                                   #   exported to it.
+#                                   #   exported to it. It must exec the server and stay in the foreground: its pid
+#                                   #   is watched while Strata loads (a script that backgrounds the server and
+#                                   #   exits is reported as a dead start).
 # STRATA_CONFIG=                    # engine JSON to copy with a larger --max-context (blank = $STRATA_DIR/strata-<size>.json
 #                                   #   when it exists, else none: the script's own config is used as-is)
 # STRATA_MAX_CONTEXT=212992         # --max-context written into that copy (the shared JSON is never edited)

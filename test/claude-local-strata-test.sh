@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # claude-local engine test — runs bin/claude-local against a stub `claude` (prints its env) and a stub Strata
 # /health server. Covers: an Ollama tag, Strata already loaded, the context cap, the low-RAM refusal (start
-# script never runs), a cold start through the start script with the context override, and a start that dies.
+# script never runs), a cold start through the start script with the context override, a start that dies, and
+# an answering-but-unloaded Strata (load ok, load refused, low RAM refuses the load).
 # No real model, no network beyond 127.0.0.1; every process it starts is stopped on exit.
 set -uo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
@@ -34,6 +35,9 @@ class H(http.server.BaseHTTPRequestHandler):
         body = json.dumps({"status": "ok", "max_context": ctx, "model": "flash-test", "loaded": time.time() - t0 >= delay,
                            "service": "strata"}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+    def do_POST(self):
+        # /load fails when started with --load-fail; otherwise it succeeds and --delay still gates "loaded".
+        self.send_response(500 if (self.path == "/load" and "--load-fail" in a) else 200); self.end_headers()
 http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
 EOF
 free_port(){ python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
@@ -114,6 +118,22 @@ check "a dead start exits non-zero" '^1$' "$rc"
 out="$(run env STRATA_URL="http://127.0.0.1:$(free_port)" "$CL" strata)"; rc=$?
 check "no start script configured is a clear error" 'STRATA_START_SCRIPT is not set' "$out"
 
+P="$(free_port)"; python3 -I "$TMP/stub-strata.py" --port "$P" --delay 2 & pids+=($!); wait_up "$P"
+out="$(run env STRATA_URL="http://127.0.0.1:$P" "$CL" strata)"; rc=$?
+check "an answering-but-unloaded Strata is loaded" 'the model is unloaded; loading it' "$out"
+check "loading an answering Strata succeeds" 'Strata is loaded' "$out"
+check "a load with enough RAM launches Claude Code" '^ANTHROPIC_BASE_URL=http://127.0.0.1:'"$P"'$' "$out"
+kill "${pids[-1]}"
+
+P="$(free_port)"; python3 -I "$TMP/stub-strata.py" --port "$P" --delay 100 --load-fail & pids+=($!); wait_up "$P"
+out="$(run env STRATA_URL="http://127.0.0.1:$P" SMOLS_MEMINFO="$TMP/meminfo-low" "$CL" strata)"; rc=$?
+check "low RAM refuses to load an answering Strata" 'not loading the Strata model \(iq2_xs\)' "$out"
+check "a refused load exits non-zero" '^1$' "$rc"
+out="$(run env STRATA_URL="http://127.0.0.1:$P" "$CL" strata)"; rc=$?
+check "a failed load request fails fast" 'refused the model load' "$out"
+check "a failed load exits non-zero" '^1$' "$rc"
+kill "${pids[-1]}"
+
 P="$(free_port)"
 eng(){ run env LOCAL_ENGINES="fl other" ENGINE_fl_URL="http://127.0.0.1:$P" ENGINE_fl_HEALTH="http://127.0.0.1:$P/health" \
   ENGINE_fl_MODEL=flint-test ENGINE_fl_CTX=190000 ENGINE_fl_MAX_OUT=16000 ENGINE_fl_ENV="CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000" \
@@ -128,8 +148,12 @@ check "an endpoint engine sets its context" '^CLAUDE_CODE_MAX_CONTEXT_TOKENS=190
 check "an endpoint engine sets its output cap" '^CLAUDE_CODE_MAX_OUTPUT_TOKENS=16000$' "$out"
 check "an endpoint engine passes its extra env" '^CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000$' "$out"
 check "an endpoint engine gets effort xhigh" '^CLAUDE_CODE_EFFORT_LEVEL=xhigh$' "$out"
-out="$(eng ENGINE_fl_START="echo again >> '$TMP/fl-started'" "$CL" fl)"
-check "an endpoint engine that is up is not started again" '^go$' "$(cat "$TMP/fl-started")"
+eng ENGINE_fl_START="echo again >> '$TMP/fl-started'" "$CL" fl >/dev/null 2>&1
+if [ "$(cat "$TMP/fl-started" 2>/dev/null)" = go ]; then
+  echo "  ✓ an endpoint engine that is up is not started again"; PASS=$((PASS+1))
+else
+  echo "  ✗ an endpoint engine that is up is not started again (fl-started: $(cat "$TMP/fl-started" 2>/dev/null | tr '\n' ' '))"; FAIL=$((FAIL+1))
+fi
 pkill -f "$TMP/stub-strata.py --port $P" 2>/dev/null
 
 echo "$PASS passed, $FAIL failed"
