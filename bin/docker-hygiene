@@ -1,52 +1,149 @@
 #!/usr/bin/env bash
-# docker-hygiene — read-only report of Docker disk waste: orphan anonymous volumes, dead/exited
-# containers, dangling images, and reclaimable build cache — while SPARING compose-managed data.
-# Proposes prunes; runs nothing. Exit: 0 ran (even if Docker is absent/down).
+# docker-hygiene — read-only report of Docker disk waste: host disk + Docker Desktop disk image, orphan
+# anonymous volumes, dead/exited containers, dangling and unused images, and reclaimable build cache —
+# while SPARING compose-managed data. Proposes prunes; runs nothing. Exit: 0 ran (even if Docker is absent/down).
+#
+# A docker call that FAILS is reported as unknown, never as zero: an empty answer from a broken daemon
+# (e.g. "input/output error" when a full host disk stops the VM disk image growing) must not read as CLEAN.
 set -uo pipefail
 BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
 
-smols_identity "Read-only: Docker disk waste — orphan volumes, dead containers, dangling images, build cache"
+smols_identity "Read-only: Docker disk waste — host disk, orphan volumes, dead containers, unused images, build cache"
 
-DKT="${SMOLS_DOCKER_TIMEOUT:-8}"   # cap every docker call — a wedged daemon must not hang the report
+DKT="${SMOLS_DOCKER_TIMEOUT:-8}"      # cap quick docker calls — a wedged daemon must not hang the report
+DFT="${SMOLS_DOCKER_DF_TIMEOUT:-90}"  # 'system df'/'buildx du' walk every layer and cache record: slow on 100+ GB
+LOW_PCT="${SMOLS_DOCKER_HOST_LOW_PCT:-90}"   # host disk this full (or < LOW_GB free) is the real emergency
+LOW_GB="${SMOLS_DOCKER_HOST_LOW_GB:-20}"
+
+unknown=()   # checks that failed — reported, never counted as zero
+# first_err <output> — the last non-empty line of a failed command, trimmed for a one-line report
+first_err(){ printf '%s\n' "$1" | awk 'NF{l=$0} END{print substr(l,1,160)}'; }
+# gb <size> — "179.3GB" / "802.8kB" / "0B" -> GB as a decimal number (docker uses SI units)
+gb(){ awk -v s="${1:-0}" 'BEGIN{n=s+0; u=s; sub(/^[0-9.]+/,"",u)
+  m=(u=="kB"?1e-6:u=="MB"?1e-3:u=="GB"?1:u=="TB"?1e3:u=="B"?1e-9:0); printf "%.1f", n*m}'; }
+
+# --- host disk: checked before the daemon, because a full host disk is what breaks the daemon ---
+smols_sec "host disk"
+raw="${SMOLS_DOCKER_RAW:-}"
+if [ -z "$raw" ] && [ "$SMOLS_OS" = macos ]; then
+  for f in "$HOME/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw" \
+           "$HOME/Library/Containers/com.docker.docker/Data/vms/0/Docker.raw"; do
+    [ -f "$f" ] && { raw="$f"; break; }
+  done
+fi
+host_dir="${raw:+$(dirname "$raw")}"
+if [ -n "$raw" ] && [ -f "$raw" ]; then
+  alloc_k="$(du -k "$raw" 2>/dev/null | awk '{print $1}')"
+  smols_line "Docker.raw allocated" "$(smols_human $(( ${alloc_k:-0} * 1024 )))  (sparse; shrinks after prunes)"
+fi
+[ -z "$host_dir" ] && [ "$SMOLS_OS" != macos ] && host_dir="/var/lib/docker"
+[ -d "${host_dir:-/nonexistent}" ] || host_dir="$HOME"
+read -r host_avail_k host_pct < <(df -Pk "$host_dir" 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $4, $5}')
+host_low=0
+if [ -n "${host_avail_k:-}" ]; then
+  smols_line "host free" "$(smols_human $(( host_avail_k * 1024 ))) (${host_pct}% used)"
+  { [ "${host_pct:-0}" -ge "$LOW_PCT" ] || [ "$host_avail_k" -lt $(( LOW_GB * 1024 * 1024 )) ]; } && host_low=1
+else
+  unknown+=("host disk")
+fi
+
 if ! have docker; then smols_verdict OK NO_DOCKER "Docker not installed — nothing to report."; exit 0; fi
 if ! smols_timeout "$DKT" docker info >/dev/null 2>&1; then
   smols_verdict FAIL DAEMON_DOWN "Docker is installed but the daemon isn't responding (or is wedged past ${DKT}s)."
-  smols_help "Start Docker ('systemctl start docker' or launch Docker Desktop), then re-run"; exit 0
+  hints=("Start Docker ('systemctl start docker' or launch Docker Desktop), then re-run")
+  [ "$host_low" -eq 1 ] && hints=("The host disk is nearly full — that alone can crash the Docker VM. Free host space first (package caches, Trash), then start Docker and re-run" "${hints[@]}")
+  smols_help "${hints[@]}"; exit 0
 fi
 
 smols_sec "disk usage"
 smols_line "data root" "$(smols_timeout "$DKT" docker info -f '{{.DockerRootDir}}' 2>/dev/null)"
-smols_timeout "$DKT" docker system df 2>/dev/null | sed 's/^/  /'
+df_out="$(smols_timeout "$DFT" docker system df --format '{{.Type}}|{{.Size}}|{{.Reclaimable}}' 2>&1)"; df_rc=$?
+io_err=0
+if [ "$df_rc" -eq 0 ]; then
+  printf '%s\n' "$df_out" | awk -F'|' 'NF==3{printf "  %-22s %-10s reclaimable %s\n", $1, $2, $3}'
+else
+  if smols_is_timeout "$df_rc"; then why="timed out after ${DFT}s"; else why="$(first_err "$df_out")"; fi
+  smols_line "docker system df" "FAILED — $why"
+  printf '%s' "$df_out" | grep -qi 'input/output error' && io_err=1
+  unknown+=("docker system df")
+fi
+reclaim(){ printf '%s\n' "$df_out" | awk -F'|' -v t="$1" '$1==t{r=$3; sub(/ .*/,"",r); print r; exit}'; }
+
+# Build cache: from 'system df', else straight from buildx (Docker Desktop keeps it in the buildkit store)
+bcache=""
+[ "$df_rc" -eq 0 ] && bcache="$(reclaim 'Build Cache')"
+if [ -z "$bcache" ]; then
+  bx_out="$(smols_timeout "$DFT" docker buildx du 2>&1)"; bx_rc=$?
+  if [ "$bx_rc" -eq 0 ]; then
+    bcache="$(printf '%s\n' "$bx_out" | awk '/^Reclaimable:/{print $2; exit}')"
+    smols_line "build cache (buildx du)" "${bcache:-?} reclaimable"
+  fi
+  [ -z "$bcache" ] && unknown+=("build cache")
+fi
+img_unused="$(reclaim Images)"
+vol_unused="$(reclaim 'Local Volumes')"
 
 smols_sec "orphan anonymous volumes (compose-managed data is spared)"
 orphans=0
-while read -r v; do
-  [ -n "$v" ] || continue
-  proj="$(smols_timeout "$DKT" docker volume inspect "$v" -f '{{ index .Labels "com.docker.compose.project" }}' 2>/dev/null)"
-  { [ -n "$proj" ] && [ "$proj" != "<no value>" ]; } && continue   # compose-managed -> leave it
-  echo "  $v"; orphans=$((orphans+1))
-done < <(smols_timeout "$DKT" docker volume ls -qf dangling=true 2>/dev/null)
-[ "$orphans" -eq 0 ] && echo "  (none)"
+vols="$(smols_timeout "$DKT" docker volume ls -qf dangling=true 2>&1)"; vrc=$?
+if [ "$vrc" -ne 0 ]; then
+  smols_line "docker volume ls" "FAILED — $(first_err "$vols")"; unknown+=("volumes")
+else
+  while read -r v; do
+    [ -n "$v" ] || continue
+    proj="$(smols_timeout "$DKT" docker volume inspect "$v" -f '{{ index .Labels "com.docker.compose.project" }}' 2>/dev/null)"
+    { [ -n "$proj" ] && [ "$proj" != "<no value>" ]; } && continue   # compose-managed -> leave it
+    echo "  $v"; orphans=$((orphans+1))
+  done <<< "$vols"
+  [ "$orphans" -eq 0 ] && echo "  (none)"
+fi
 
 smols_sec "dead / exited containers"
-dead="$(smols_timeout "$DKT" docker ps -aq --filter status=exited --filter status=dead 2>/dev/null | grep -c .)"
-smols_line "count" "$dead"
-smols_timeout "$DKT" docker ps -a --filter status=exited --filter status=dead --format '  {{.Names}}  ({{.Image}} — {{.Status}})' 2>/dev/null | head -8
+dead=0
+ps_out="$(smols_timeout "$DKT" docker ps -a --filter status=exited --filter status=dead --format '{{.Names}}  ({{.Image}} — {{.Status}})' 2>&1)"; prc=$?
+if [ "$prc" -ne 0 ]; then
+  smols_line "docker ps" "FAILED — $(first_err "$ps_out")"; unknown+=("containers")
+else
+  dead="$(printf '%s\n' "$ps_out" | grep -c .)"
+  smols_line "count" "$dead"
+  printf '%s\n' "$ps_out" | grep . | head -8 | sed 's/^/  /'
+fi
 
 smols_sec "dangling images"
-dang="$(smols_timeout "$DKT" docker images -qf dangling=true 2>/dev/null | grep -c .)"
-smols_line "count" "$dang"
+dang=0
+im_out="$(smols_timeout "$DKT" docker images -qf dangling=true 2>&1)"; irc=$?
+if [ "$irc" -ne 0 ]; then
+  smols_line "docker images" "FAILED — $(first_err "$im_out")"; unknown+=("images")
+  printf '%s' "$im_out" | grep -qi 'input/output error' && io_err=1
+else
+  dang="$(printf '%s\n' "$im_out" | grep -c .)"
+  smols_line "count" "$dang"
+fi
 
 smols_sec "verdict"
-bcache="$(smols_timeout "$DKT" docker system df --format '{{.Type}}|{{.Reclaimable}}' 2>/dev/null | awk -F'|' '$1=="Build Cache"{print $2; exit}')"
-bcache="${bcache%% (*}"
-bcache_has="$(printf '%s' "$bcache" | awk '{print (($0+0)>0)?1:0}')"
-if [ "$orphans" -gt 0 ] || [ "${dead:-0}" -gt 0 ] || [ "${dang:-0}" -gt 0 ] || [ "${bcache_has:-0}" -eq 1 ]; then
-  smols_verdict WARN RECLAIMABLE "$orphans orphan volume(s), ${dead:-0} dead container(s), ${dang:-0} dangling image(s), ${bcache:-0B} build cache."
-  hints=("Review first (these delete data): 'docker container prune' + 'docker image prune'; remove the listed orphan volumes with 'docker volume rm <name>'. Do NOT 'docker volume prune' blindly — check labels first.")
-  [ "${bcache_has:-0}" -eq 1 ] && hints+=("'docker builder prune' reclaims the ${bcache} build cache (see 'docker system df' above)")
-  smols_help "${hints[@]}"
-else
-  smols_verdict OK CLEAN "no orphan volumes, dead containers, dangling images, or reclaimable build cache."
+bc_gb="$(gb "$bcache")"; img_gb="$(gb "$img_unused")"
+bc_has="$(awk -v g="$bc_gb" 'BEGIN{print (g>=0.1)}')"; img_has="$(awk -v g="$img_gb" 'BEGIN{print (g>=1)}')"
+hints=()
+if [ "$host_low" -eq 1 ] || [ "$io_err" -eq 1 ]; then
+  hints+=("Host disk nearly full or the Docker VM is returning I/O errors: prunes can FAIL until the VM can write again. Free a few GB on the host first (npm/brew/pip caches, Trash), restart Docker, then prune")
 fi
+[ "$bc_has" -eq 1 ] && hints+=("'docker buildx prune -af' (or 'docker builder prune -af') reclaims the ${bcache} build cache — cache only, rebuilds get slower")
+[ "$dead" -gt 0 ] && hints+=("'docker container prune' removes the ${dead} dead container(s)")
+[ "$dang" -gt 0 ] && hints+=("'docker image prune' removes the ${dang} dangling image(s)")
+[ "$img_has" -eq 1 ] && hints+=("'docker image prune -a' removes ${img_unused} of images no container uses — they re-pull on next use")
+[ "$orphans" -gt 0 ] && hints+=("Remove the listed orphan volumes with 'docker volume rm <name>'. Do NOT 'docker volume prune' blindly — check labels first (${vol_unused:-?} of volumes are unused, compose data included)")
+[ "${#unknown[@]}" -gt 0 ] && hints+=("Could not check: ${unknown[*]} — the report is INCOMPLETE; fix the daemon/disk and re-run before calling it clean")
+
+summary="$orphans orphan volume(s), $dead dead container(s), $dang dangling image(s), ${bcache:-?} build cache, ${img_unused:-?} unused images"
+[ -n "${host_avail_k:-}" ] && summary="host $(smols_human $(( host_avail_k * 1024 ))) free; $summary"
+if [ "$host_low" -eq 1 ]; then
+  smols_verdict FAIL HOST_DISK_LOW "$summary."
+elif [ "$orphans" -gt 0 ] || [ "$dead" -gt 0 ] || [ "$dang" -gt 0 ] || [ "$bc_has" -eq 1 ] || [ "$img_has" -eq 1 ]; then
+  smols_verdict WARN RECLAIMABLE "$summary."
+elif [ "${#unknown[@]}" -gt 0 ]; then
+  smols_verdict WARN INCOMPLETE "could not check: ${unknown[*]}."
+else
+  smols_verdict OK CLEAN "no orphan volumes, dead containers, dangling or unused images, or reclaimable build cache."
+fi
+[ "${#hints[@]}" -gt 0 ] && smols_help "${hints[@]}"
 exit 0

@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **`docker-hygiene` no longer reports a broken daemon as CLEAN.** A failing `docker system df` (I/O errors once a
+  full host disk stops the Docker Desktop disk image growing, or a slow walk of a large build cache) used to come
+  back empty and read as "0B build cache", and failing `images`/`ps`/`volume ls` calls counted as zero. Failed
+  checks are now shown with their error, listed under a `WARN INCOMPLETE` verdict, and never counted as zero.
+  Build cache falls back to `docker buildx du`. New **host disk** section: Docker.raw allocated size and host free
+  space; nearly full host disk → `FAIL HOST_DISK_LOW` (`SMOLS_DOCKER_HOST_LOW_PCT` 90, `SMOLS_DOCKER_HOST_LOW_GB`
+  20). Unused (not just dangling) images are reported. `system df`/`buildx du` get their own longer cap
+  (`SMOLS_DOCKER_DF_TIMEOUT`, 90 s). Test: `test/docker-hygiene-test.sh`.
+
 ### Added
 - **`claude-local strata` engine** (alias `flashnext`) — runs Claude Code against a Strata server's
   Anthropic-compatible endpoint. Starts Strata with `STRATA_START_SCRIPT` when it is not answering, gated on
