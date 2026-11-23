@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`web-search` skill + wrapper** — live web search through a search gateway (`WEB_SEARCH_GATEWAY_URL`), falling
+  back to a local SearXNG (`WEB_SEARCH_SEARXNG_URL`, default `http://127.0.0.1:8888`). The token comes from a
+  secrets runner prefix (`WEB_SEARCH_TOKEN_RUNNER` + `WEB_SEARCH_TOKEN_VAR`) or a command
+  (`WEB_SEARCH_TOKEN_CMD`), reaches curl on stdin only, and is never printed. `--brave`, `--news` and `--context`
+  use the gateway's paid endpoints. Ends on a verdict (`OK RESULTS`, `WARN FALLBACK`, `WARN NO_RESULTS`,
+  `FAIL SEARCH_DOWN`, `FAIL NO_GATEWAY`). Test: `test/web-search-test.sh`.
+- **`claude-local` settings overlay** — `install.sh` deep-merges `~/.config/small-model-skills/settings.overlay.json`
+  over the `settings.json` it copies into the curated home, then runs an optional `settings.overlay.jq` filter, so
+  `claude-local`-only settings (skill overrides, `skillListingBudgetFraction`, dropped hooks) survive a re-install.
+  Examples: `settings.overlay.example.json`, `settings.overlay.example.jq`. Test: `test/settings-overlay-test.sh`.
 - **`claude-local strata` engine** (alias `flashnext`) — runs Claude Code against a Strata server's
   Anthropic-compatible endpoint. Starts Strata with `STRATA_START_SCRIPT` when it is not answering, gated on
   `MemAvailable >= STRATA_MEM_FLOOR_GIB` (24) and `SwapFree >= STRATA_SWAP_FLOOR_GIB` (12), and waits up to

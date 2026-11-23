@@ -1,0 +1,11 @@
+{
+  "skillOverrides": {
+    "dataviz": "off",
+    "claude-api": "off",
+    "workflow-authoring": "off",
+    "plugin-authoring": "off",
+    "fewer-permission-prompts": "off",
+    "keybindings-help": "off"
+  },
+  "skillListingBudgetFraction": 0.03
+}

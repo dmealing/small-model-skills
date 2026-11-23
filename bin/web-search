@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# web-search — live web search through a search gateway, falling back to a local SearXNG.
+# Usage: web-search [--brave|--news|--context] [--fresh d|w|m|y] [-n N] <query...>
+#   default    gateway SearXNG endpoint (free)
+#   --brave    gateway Brave web search (paid per query)
+#   --news     gateway Brave news (paid per query)
+#   --context  gateway Brave LLM Context: page passages ready to read (paid per query)
+# The gateway URL and how to get its token come only from the config (WEB_SEARCH_GATEWAY_URL, and
+# WEB_SEARCH_TOKEN_RUNNER + WEB_SEARCH_TOKEN_VAR or WEB_SEARCH_TOKEN_CMD). The token is never printed and
+# never put on a command line. With no gateway configured, or when it does not answer, the free search
+# goes to the local SearXNG (WEB_SEARCH_SEARXNG_URL). Read-only. Exit: 0 results printed, 1 no search answered,
+# 2 usage error.
+set -uo pipefail
+BIN_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"; . "$BIN_DIR/lib/common.sh"
+
+usage(){ echo "usage: web-search [--brave|--news|--context] [--fresh d|w|m|y] [-n N] <query>" >&2; exit 2; }
+ep=searxng/search fresh="" n=8
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --brave) ep=brave/web ;; --news) ep=brave/news ;; --context) ep=brave/context ;;
+    --fresh) [ $# -ge 2 ] || usage; fresh="$2"; shift ;;
+    -n) [ $# -ge 2 ] || usage; n="$2"; shift ;;
+    -h|--help) usage ;;
+    --) shift; break ;; -*) echo "web-search: unknown flag $1" >&2; usage ;; *) break ;;
+  esac; shift
+done
+[ $# -gt 0 ] || usage
+case "$n" in ''|*[!0-9]*) echo "web-search: -n takes a number" >&2; exit 2 ;; esac
+case "$fresh" in d) tr=day ;; w) tr=week ;; m) tr=month ;; y) tr=year ;; "") tr="" ;;
+  *) echo "web-search: --fresh takes d, w, m or y" >&2; exit 2 ;; esac
+q="$*"
+
+have curl || { smols_verdict FAIL PROBE_FAILED "'curl' is not installed"; exit 1; }
+have jq || { smols_verdict FAIL PROBE_FAILED "'jq' is not installed"; exit 1; }
+enc="$(jq -rn --arg q "$q" '$q|@uri')"
+GW="${WEB_SEARCH_GATEWAY_URL%/}"
+LOCAL="${WEB_SEARCH_SEARXNG_URL%/}"
+
+# GW_REQ: the gateway request, as a script run by bash -c. Args: <name of the env var holding the token>
+# <agent> <url>. The token travels to curl on stdin (a -K config), so it never shows in a process listing.
+# shellcheck disable=SC2016  # expanded by the inner bash
+GW_REQ='tok="${!1:-}"; tok="${tok//\\/\\\\}"; tok="${tok//\"/\\\"}"
+{ [ -n "$tok" ] && printf "header = \"Authorization: Bearer %s\"\n" "$tok"; } \
+  | curl -s --max-time 25 -K - -w "\n%{http_code}" -H "X-Search-Agent: $2" "$3"'
+
+# gateway_search: prints the gateway's body and returns 0 on HTTP 200 with a body; else returns 1.
+# Token sources, first set wins:
+#   WEB_SEARCH_TOKEN_RUNNER  a secrets runner prefix (it runs the command after it with the secret in its
+#                            environment); only the gateway request runs under it, so a keystore that does
+#                            not answer still leaves the local fallback. WEB_SEARCH_TOKEN_VAR names the variable.
+#   WEB_SEARCH_TOKEN_CMD     a command printing the bare token.
+gateway_search(){
+  local args="q=$enc&max_results=$n&format=toon" url out code body tok=""
+  if [ -n "$fresh" ]; then
+    case "$ep" in searxng/*) args="$args&time_range=$tr" ;; *) args="$args&freshness=p$fresh" ;; esac
+  fi
+  url="$GW/v1/$ep?$args"
+  if [ -n "$WEB_SEARCH_TOKEN_RUNNER" ]; then
+    out="$(bash -c "$WEB_SEARCH_TOKEN_RUNNER"' "$@"' _ bash -c "$GW_REQ" _ \
+      "$WEB_SEARCH_TOKEN_VAR" "$WEB_SEARCH_AGENT" "$url" 2>/dev/null </dev/null)"
+  else
+    if [ -n "$WEB_SEARCH_TOKEN_CMD" ]; then
+      tok="$(bash -c "$WEB_SEARCH_TOKEN_CMD" 2>/dev/null </dev/null | head -n1 | tr -d '\r')"
+      [ -n "$tok" ] || echo "web-search: WEB_SEARCH_TOKEN_CMD printed no token; trying the gateway without one" >&2
+    fi
+    out="$(_WEB_SEARCH_TOKEN="$tok" bash -c "$GW_REQ" _ _WEB_SEARCH_TOKEN "$WEB_SEARCH_AGENT" "$url" 2>/dev/null </dev/null)"
+  fi
+  code="$(tail -n1 <<<"$out")"; body="$(sed '$d' <<<"$out")"
+  if [ "$code" = 200 ] && [ -n "$body" ]; then printf '%s\n' "$body"; return 0; fi
+  case "$code" in
+    401|403) echo "web-search: gateway refused the token ($code); check WEB_SEARCH_TOKEN_RUNNER/_VAR or WEB_SEARCH_TOKEN_CMD" >&2 ;;
+    *) echo "web-search: gateway answered ${code:-nothing} for $ep" >&2 ;;
+  esac
+  return 1
+}
+
+# local_search: free SearXNG JSON API. Returns 0 with results printed, 3 when it answered with no
+# results, 1 when it did not answer.
+local_search(){
+  local raw cnt
+  raw="$(curl -s --max-time 15 "$LOCAL/search?q=$enc&format=json${tr:+&time_range=$tr}" 2>/dev/null)" || return 1
+  cnt="$(printf '%s' "$raw" | jq -er '.results | length' 2>/dev/null)" || return 1
+  [ "$cnt" -gt 0 ] || return 3
+  printf '%s' "$raw" | jq -r --argjson n "$n" \
+    '.results[0:$n][] | "- \(.title)\n  \(.url)\n  \(.content // "" | .[0:300])"'
+}
+
+if [ -n "$GW" ]; then
+  if gateway_search; then smols_verdict OK RESULTS "gateway $ep answered"; exit 0; fi
+elif [ "$ep" != searxng/search ]; then
+  smols_verdict FAIL NO_GATEWAY "--brave, --news and --context need WEB_SEARCH_GATEWAY_URL in the config"
+  exit 1
+fi
+if [ -n "$LOCAL" ]; then
+  local_search; rc=$?
+  if [ "$rc" = 0 ] && [ -n "$GW" ]; then smols_verdict WARN FALLBACK "gateway did not answer; results are from the local SearXNG"; exit 0; fi
+  if [ "$rc" = 0 ]; then smols_verdict OK RESULTS "local SearXNG answered"; exit 0; fi
+  if [ "$rc" = 3 ]; then smols_verdict WARN NO_RESULTS "local SearXNG answered with no results; refine the query"; exit 0; fi
+fi
+smols_verdict FAIL SEARCH_DOWN "no search answered (gateway: ${GW:-not set}; local SearXNG: ${LOCAL:-not set})"
+smols_help "Set WEB_SEARCH_GATEWAY_URL and WEB_SEARCH_TOKEN_CMD, or WEB_SEARCH_SEARXNG_URL, in the config"
+exit 1

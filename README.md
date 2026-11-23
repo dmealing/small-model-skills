@@ -84,10 +84,11 @@ portability bugs the macOS port surfaced along the way.
 |---|---|
 | `smon` | routine system monitor — runs each configured probe on a schedule, reads its verdict, alerts on state transitions (not blips), optional cheap-model enrichment, fallback notify when primary fails, heartbeat for dead-host detection, optional daily digest |
 
-**Search** (read-only; find a file, don't triage):
+**Search** (read-only; find a file or a web page, don't triage):
 | Skill | Answers |
 |---|---|
 | `file-search` | where's that file? find by name or content (`find-files`; ripgrep/fd, falls back to grep/find) |
+| `web-search` | live web search (`web-search`) through your search gateway, falling back to a local SearXNG; for local-model sessions where the built-in WebSearch returns nothing. Set `WEB_SEARCH_*` in the config |
 
 **Offline-dev** (the plane case):
 | Skill | Does |
@@ -208,6 +209,15 @@ smaller, cleaner context and tool surface. A side effect is that your global `~/
 so every `claude` session can use them. To keep them out of your normal sessions and expose them **only**
 to `claude-local`, install with `--local` (or `SMOLS_SKILLS_SCOPE=local`, or just answer the installer's
 prompt). Your choice is remembered on re-install; `./install.sh --help` lists the options.
+
+**Settings just for `claude-local`.** Each `install.sh` run re-copies `~/.claude/settings.json` into the
+curated home, so a hand edit there is lost. Put `claude-local`-only settings in
+`~/.config/small-model-skills/settings.overlay.json` instead: it is deep-merged over the copy on every run
+(objects merge key by key, other values replace, `null` removes a key). A typical one turns off bundled
+skills a small model does not need and raises `skillListingBudgetFraction` so these skills' descriptions
+fit in the listing: see [`settings.overlay.example.json`](settings.overlay.example.json). For an edit a
+merge cannot express, such as dropping one SessionStart hook, add a jq filter as
+`settings.overlay.jq` ([`settings.overlay.example.jq`](settings.overlay.example.jq)).
 
 ### Which model? (what the benchmark says)
 

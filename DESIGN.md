@@ -80,10 +80,11 @@ LICENSE              MIT
 | `disk-health` | `smart-health` | "is a drive failing or wearing out?" (NVMe wear/spare/critical, SATA reallocated/pending sectors, temps) |
 | `log-service-triage` | `log-triage` | "what service is broken / what's in the logs?" (failed units, recent errors) |
 
-**Search** (read-only; locate a file, not triage):
+**Search** (read-only; locate a file or a web page, not triage):
 | Skill | Wrapper | Answers |
 |---|---|---|
 | `file-search` | `find-files` | "where is that file / where is X configured?" — find by name + content (ripgrep/fd, falls back to grep/find), result-capped and time-bounded |
+| `web-search` | `web-search` | "search the web for X" — a search gateway from the config (token via a secrets runner or command, never stored), falling back to a local SearXNG |
 
 **Offline-dev** (the plane case):
 | Skill | Wrapper | Does |

@@ -74,6 +74,41 @@ if [ "$SCOPE" = local ]; then echo "  skills : $CC_HOME/skills   (scope=local �
 else echo "  skills : $SKILLS   (scope=global — all sessions) + curated cc-home for claude-local"; fi
 echo
 
+# Local settings overlay for claude-local. The copy of ~/.claude/settings.json below would wipe any hand edit
+# to cc-home/settings.json, so claude-local-only settings live beside the config instead and are re-applied
+# on every run:
+#   settings.overlay.json  deep-merged over the copy: objects merge key by key, any other value (an array
+#                          too) replaces, and a null removes the key.
+#   settings.overlay.jq    optional jq filter run after the merge, for edits a merge cannot express (dropping
+#                          one hook from a list). Keep it idempotent: it may run on an already-filtered file.
+# See settings.overlay.example.json. On a bad overlay the copied settings are left unchanged, with a warning.
+OVERLAY_JSON="$(dirname "$CFG")/settings.overlay.json"
+OVERLAY_JQ="$(dirname "$CFG")/settings.overlay.jq"
+apply_settings_overlay(){
+  [ -f "$OVERLAY_JSON" ] || [ -f "$OVERLAY_JQ" ] || return 0
+  local dst="$CC_HOME/settings.json" tmp ov='{}' filter=''
+  command -v jq >/dev/null 2>&1 || { echo "  WARNING: jq is missing — settings overlay NOT applied"; return 0; }
+  [ -f "$OVERLAY_JSON" ] && ov="$(cat "$OVERLAY_JSON")"
+  [ -f "$OVERLAY_JQ" ] && filter="$(cat "$OVERLAY_JQ")"
+  [ -n "${filter//[[:space:]]/}" ] || filter='.'
+  tmp="$(mktemp "$CC_HOME/.settings.json.XXXXXX")"
+  # shellcheck disable=SC2016  # $ov / $b / $k are jq variables
+  if { if [ -f "$dst" ]; then cat "$dst"; else printf '{}'; fi; } | jq --argjson ov "$ov" '
+      def merge($b): if ($b | type) == "object"
+        then reduce ($b | keys_unsorted[]) as $k ((if type == "object" then . else {} end);
+          if $b[$k] == null then del(.[$k]) else .[$k] |= merge($b[$k]) end)
+        else $b end;
+      merge($ov) | (
+'"$filter"'
+)' > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    chmod 600 "$tmp"; mv -f "$tmp" "$dst"
+    echo "applied settings overlay to $dst"
+  else
+    rm -f "$tmp"
+    echo "  WARNING: settings overlay failed to apply (check $OVERLAY_JSON / $OVERLAY_JQ) — settings left as copied"
+  fi
+}
+
 # 1. copy runtime. rm the dests first: 'cp -a src dest' nests when dest exists (dest/src) and a
 #    plain merge-copy leaves stale files (a wrapper deleted from the repo would linger installed).
 mkdir -p "$DATA"
@@ -128,6 +163,7 @@ if compgen -G "$SRC/skills/*/" >/dev/null; then
   if [ -f "$HOME/.claude/settings.json" ] && cp "$HOME/.claude/settings.json" "$CC_HOME/settings.json" 2>/dev/null; then
     chmod 600 "$CC_HOME/settings.json"
   fi
+  apply_settings_overlay
   echo "curated skills home: $CC_HOME ($(ls "$CC_HOME/skills" 2>/dev/null | wc -l) skills for claude-local)"
 fi
 
