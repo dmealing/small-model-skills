@@ -150,6 +150,20 @@ SEARCH_MAX=20           # cap results per section (names / contents)
 # SEARCH_NAME_TIMEOUT=15    # seconds before the file-NAME search is cut off (verdict says so; raise to try harder)
 # SEARCH_CONTENT_TIMEOUT=20 # seconds before the file-CONTENT search is cut off
 
+# --- Web search (web-search skill) ---
+# A search gateway with /v1/searxng/search and /v1/brave/{web,news,context} endpoints. Blank = local SearXNG only.
+# WEB_SEARCH_GATEWAY_URL=           # gateway base URL, e.g. https://search.example.internal
+# The token is kept out of this file. Give ONE of these two ways to get it (names below are examples):
+# WEB_SEARCH_TOKEN_RUNNER=          # a secrets runner prefix: it runs the command after it with the token in its
+#                                   #   environment, e.g. 'op run --env-file=$HOME/.config/search.env --' or
+#                                   #   'infisical run --env=dev --'. Only the gateway request runs under it, so
+#                                   #   a keystore that does not answer still leaves the local fallback.
+# WEB_SEARCH_TOKEN_VAR=SEARCH_API_TOKEN   # the variable that runner sets
+# WEB_SEARCH_TOKEN_CMD=             # or: a command (run via bash -c) printing the bare token on one line,
+#                                   #   e.g. WEB_SEARCH_TOKEN_CMD='my-secrets get SEARCH_API_TOKEN'
+# WEB_SEARCH_AGENT=small-model-skills   # X-Search-Agent header (lets the gateway count usage per caller)
+# WEB_SEARCH_SEARXNG_URL=http://127.0.0.1:8888   # local SearXNG fallback; set it blank to disable the fallback
+
 # --- Disk report (disk-report skill) ---
 # SMOLS_DU_TIMEOUT=20       # seconds to spend sizing the biggest dirs one level under the fullest filesystem
 # SMOLS_DU_HOG_TIMEOUT=8    # seconds per common hog dir (/var/log, ~/.cache, /var/cache, /tmp)

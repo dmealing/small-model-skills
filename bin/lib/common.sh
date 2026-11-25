@@ -83,6 +83,14 @@ SMOLS_CONFIG="${SMOLS_CONFIG:-$HOME/.config/small-model-skills/config}"
 : "${KNOWN_BAD_KERNELS:=}"
 : "${FREEZE_REMOTE_LOG_CMD:=}"
 
+# --- web search (web-search) ---
+: "${WEB_SEARCH_GATEWAY_URL:=}"                    # search gateway base URL (blank = local SearXNG only)
+: "${WEB_SEARCH_TOKEN_RUNNER:=}"                   # secrets-runner prefix that puts the token in the environment
+: "${WEB_SEARCH_TOKEN_VAR:=SEARCH_API_TOKEN}"      # ...and the variable it sets
+: "${WEB_SEARCH_TOKEN_CMD:=}"                      # or: a command printing the gateway token (blank = no token)
+: "${WEB_SEARCH_AGENT:=small-model-skills}"        # X-Search-Agent header the gateway logs per caller
+: "${WEB_SEARCH_SEARXNG_URL=http://127.0.0.1:8888}"    # local SearXNG fallback (set it blank = no fallback)
+
 # --- verdict thresholds (config-tunable; the monitoring probes key their WARN/FAIL on these) ---
 : "${DISK_WARN_PCT:=85}"     # fullest filesystem at/above this % -> disk-report WARN
 : "${DISK_CRIT_PCT:=95}"     # ...at/above this % -> disk-report FAIL
