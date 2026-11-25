@@ -112,7 +112,7 @@ apply_settings_overlay(){
 # 1. copy runtime. rm the dests first: 'cp -a src dest' nests when dest exists (dest/src) and a
 #    plain merge-copy leaves stale files (a wrapper deleted from the repo would linger installed).
 mkdir -p "$DATA"
-rm -rf "$DATA/bin" "$DATA/modules" "$DATA/monitor"
+rm -rf "${DATA:?}/bin" "${DATA:?}/modules" "${DATA:?}/monitor"
 cp -a "$SRC/bin" "$SRC/modules" "$DATA/"
 [ -d "$SRC/monitor" ] && cp -a "$SRC/monitor" "$DATA/"   # the smon system monitor (bin/ + test/)
 chmod +x "$DATA"/bin/* "$DATA"/monitor/bin/* 2>/dev/null || true
@@ -136,11 +136,11 @@ if compgen -G "$SRC/skills/*/" >/dev/null; then
     n="$(basename "$d")"
     if [ "$SCOPE" = local ]; then
       # local: the real copy lives in cc-home; scrub the global dir so a normal `claude` won't load it.
-      rm -rf "$SKILLS/$n"
+      rm -rf "${SKILLS:?}/$n"
       dst="$CC_HOME/skills/$n"; rm -rf "$dst"; cp -a "$d" "$dst"
     else
       # global: real copy in ~/.claude/skills (all sessions); cc-home just symlinks to it (stays in sync).
-      mkdir -p "$SKILLS"; rm -rf "$SKILLS/$n"; cp -a "$d" "$SKILLS/$n"
+      mkdir -p "$SKILLS"; rm -rf "${SKILLS:?}/$n"; cp -a "$d" "$SKILLS/$n"
       rm -rf "$CC_HOME/skills/$n"; ln -sfn "$SKILLS/$n" "$CC_HOME/skills/$n"
     fi
   done

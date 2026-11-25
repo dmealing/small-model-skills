@@ -12,7 +12,7 @@ All notable changes to this project are documented here. The format is based on
   secrets runner prefix (`WEB_SEARCH_TOKEN_RUNNER` + `WEB_SEARCH_TOKEN_VAR`) or a command
   (`WEB_SEARCH_TOKEN_CMD`), reaches curl on stdin only, and is never printed. `--brave`, `--news` and `--context`
   use the gateway's paid endpoints. Ends on a verdict (`OK RESULTS`, `WARN FALLBACK`, `WARN NO_RESULTS`,
-  `FAIL SEARCH_DOWN`, `FAIL NO_GATEWAY`). Test: `test/web-search-test.sh`.
+  `FAIL SEARCH_DOWN`, `FAIL NO_GATEWAY`, `FAIL PROBE_FAILED`). Test: `test/web-search-test.sh`.
 - **`claude-local` settings overlay** — `install.sh` deep-merges `~/.config/small-model-skills/settings.overlay.json`
   over the `settings.json` it copies into the curated home, then runs an optional `settings.overlay.jq` filter, so
   `claude-local`-only settings (skill overrides, `skillListingBudgetFraction`, dropped hooks) survive a re-install.
